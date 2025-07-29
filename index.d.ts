@@ -1,0 +1,11 @@
+export { default } from './src/aave-protocol-evm.js'
+export type WalletAccountEvm = import('@wdk/wdk-wallet-evm');
+export type BorrowOptions = import('@wdk/wallet/protocols').BorrowOptions;
+export type BorrowResult = import('@wdk/wallet/protocols').BorrowResult;
+export type SupplyOptions = import('@wdk/wallet/protocols').SupplyOptions;
+export type SupplyResult = import('@wdk/wallet/protocols').SupplyResult;
+export type WithdrawOptions = import('@wdk/wallet/protocols').WithdrawOptions;
+export type WithdrawResult = import('@wdk/wallet/protocols').WithdrawResult;
+export type RepayOptions = import('@wdk/wallet/protocols').RepayOptions;
+export type RepayResult = import('@wdk/wallet/protocols').RepayResult;
+export type AccountData = import('./src/aave-protocol-evm').AccountData;
