@@ -29,20 +29,65 @@ export function isBigIntInfinity (value) {
   return value === MAX_UINT256
 }
 
-export const AAVE_V3_POOL_ADDRESS_MAP = {
-  [AaveV3Ethereum.CHAIN_ID]: AaveV3Ethereum.POOL,
-  [AaveV3Arbitrum.CHAIN_ID]: AaveV3Arbitrum.POOL,
-  [AaveV3Base.CHAIN_ID]: AaveV3Base.POOL,
-  [AaveV3Optimism.CHAIN_ID]: AaveV3Optimism.POOL,
-  [AaveV3Polygon.CHAIN_ID]: AaveV3Polygon.POOL,
-  [AaveV3Avalanche.CHAIN_ID]: AaveV3Avalanche.POOL,
-  [AaveV3BNB.CHAIN_ID]: AaveV3BNB.POOL,
-  [AaveV3Celo.CHAIN_ID]: AaveV3Celo.POOL,
-  [AaveV3Gnosis.CHAIN_ID]: AaveV3Gnosis.POOL,
-  [AaveV3Linea.CHAIN_ID]: AaveV3Linea.POOL,
-  [AaveV3Scroll.CHAIN_ID]: AaveV3Scroll.POOL,
-  [AaveV3Soneium.CHAIN_ID]: AaveV3Soneium.POOL,
-  [AaveV3Sonic.CHAIN_ID]: AaveV3Sonic.POOL,
-  [AaveV3ZkSync.CHAIN_ID]: AaveV3ZkSync.POOL,
-  [AaveV3Metis.CHAIN_ID]: AaveV3Metis.POOL
+export const AAVE_V3_ADDRESS_MAP = {
+  [AaveV3Ethereum.CHAIN_ID]: {
+    pool: AaveV3Ethereum.POOL,
+    uiPoolDataProvider: AaveV3Ethereum.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Arbitrum.CHAIN_ID]: {
+    pool: AaveV3Arbitrum.POOL,
+    uiPoolDataProvider: AaveV3Arbitrum.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Base.CHAIN_ID]: {
+    pool: AaveV3Base.POOL,
+    uiPoolDataProvider: AaveV3Base.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Optimism.CHAIN_ID]: {
+    pool: AaveV3Optimism.POOL,
+    uiPoolDataProvider: AaveV3Optimism.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Polygon.CHAIN_ID]: {
+    pool: AaveV3Polygon.POOL,
+    uiPoolDataProvider: AaveV3Polygon.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Avalanche.CHAIN_ID]: {
+    pool: AaveV3Avalanche.POOL,
+    uiPoolDataProvider: AaveV3Avalanche.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3BNB.CHAIN_ID]: {
+    pool: AaveV3BNB.POOL,
+    uiPoolDataProvider: AaveV3BNB.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Celo.CHAIN_ID]: {
+    pool: AaveV3Celo.POOL,
+    uiPoolDataProvider: AaveV3Celo.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Gnosis.CHAIN_ID]: {
+    pool: AaveV3Gnosis.POOL,
+    uiPoolDataProvider: AaveV3Gnosis.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Linea.CHAIN_ID]: {
+    pool: AaveV3Linea.POOL,
+    uiPoolDataProvider: AaveV3Linea.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Scroll.CHAIN_ID]: {
+    pool: AaveV3Scroll.POOL,
+    uiPoolDataProvider: AaveV3Scroll.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Soneium.CHAIN_ID]: {
+    pool: AaveV3Soneium.POOL,
+    uiPoolDataProvider: AaveV3Soneium.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Sonic.CHAIN_ID]: {
+    pool: AaveV3Sonic.POOL,
+    uiPoolDataProvider: AaveV3Sonic.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3ZkSync.CHAIN_ID]: {
+    pool: AaveV3ZkSync.POOL,
+    uiPoolDataProvider: AaveV3ZkSync.UI_POOL_DATA_PROVIDER
+  },
+  [AaveV3Metis.CHAIN_ID]: {
+    pool: AaveV3Metis.POOL,
+    uiPoolDataProvider: AaveV3Metis.UI_POOL_DATA_PROVIDER
+  }
 }

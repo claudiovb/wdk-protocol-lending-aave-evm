@@ -18,8 +18,10 @@ import { AbstractLendingProtocol } from '@wdk/wallet/protocols'
 
 import { IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 import { Contract, isAddress, ZeroAddress } from 'ethers'
-import { AAVE_V3_POOL_ADDRESS_MAP, isBigIntInfinity } from './utils.js'
+import { AAVE_V3_ADDRESS_MAP, isBigIntInfinity } from './utils.js'
+import { AaveV3Ethereum } from '@bgd-labs/aave-address-book'
 
+import UiPoolDataProviderAbi from './UiPoolDataProvider.abi.json' with { type: 'json' }
 /** @typedef {import('@wdk/wallet/protocols').BorrowOptions} BorrowOptions */
 /** @typedef {import('@wdk/wallet/protocols').BorrowResult} BorrowResult */
 /** @typedef {import('@wdk/wallet/protocols').SupplyOptions} SupplyOptions */
@@ -48,9 +50,9 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * The main contract to interact with Aave Protocol.
    *
    * @private
-   * @type {string}
+   * @type {Record<string, string>}
    */
-  _poolAddress
+  _poolAddressMap
 
   /**
    * The contract object to interact on-chain.
@@ -59,6 +61,14 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @type {Contract}
    */
   _poolContract
+
+  /**
+   * The contract object to interact on-chain.
+   *
+   * @private
+   * @type {Contract}
+   */
+  _uiPoolDataProviderContract
 
   /**
    * Creates a handle for Aave Protocol on any EVM chain.
@@ -75,20 +85,21 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @private
    * @returns {Promise<void>}
    */
-  async _setupProtocolConfig() {
-    if (this._poolAddress) {
+  async _init() {
+    if (this._poolAddressMap) {
       return;
     }
 
     const network = await this._account._account.provider.getNetwork()
     const chainId = network.chainId
 
-    if (!AAVE_V3_POOL_ADDRESS_MAP[chainId]) {
+    if (!AAVE_V3_ADDRESS_MAP[chainId]) {
       throw new Error('Aave protocol is not supported for this chain')
     }
 
-    this._poolAddress = AAVE_V3_POOL_ADDRESS_MAP[chainId]
-    this._poolContract = new Contract(this._poolAddress, IPool_ABI, this._account._account.provider)
+    this._poolAddressMap = AAVE_V3_ADDRESS_MAP[chainId]
+    this._poolContract = new Contract(this._poolAddressMap.pool, IPool_ABI, this._account._account.provider)
+    this._uiPoolDataProviderContract = new Contract(this._poolAddressMap.uiPoolDataProvider, UiPoolDataProviderAbi, this._account._account.provider)
   }
 
   /**
@@ -125,10 +136,9 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<EvmTransaction>} Returns the EVM transaction to supply.
    */
   async _getSupplyTransaction(options) {
-    const poolContract = new Contract(this._poolAddress, IPool_ABI, this._account._account.provider)
     const address = await this._account.getAddress()
 
-    const supplyData = poolContract.interface.encodeFunctionData('supply', [
+    const supplyData = this._poolContract.interface.encodeFunctionData('supply', [
       options.token,
       options.amount,
       options.onBehalfOf || address,
@@ -138,10 +148,46 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     return {
       from: address,
       data: supplyData,
-      to: this._poolAddress,
+      to: this._poolAddressMap.pool,
       value: 0,
       gasLimit: DEFAULT_GAS_LIMIT
     }
+  }
+
+  async test() {
+    await this._init()
+    const token = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+    const uiPoolDataContract = new Contract(AaveV3Ethereum.UI_POOL_DATA_PROVIDER, UiPoolDataProviderAbi, this._account._account.provider)
+
+    // get supply cap
+    const [reserves, baseCurrencyInfo] = await uiPoolDataContract.getReservesData(AaveV3Ethereum.POOL_ADDRESSES_PROVIDER)
+
+    const supplyTokenReserve = reserves.find((reserve) => reserve[0] === token)
+
+    // can cache reserve data for approximately 1 block
+    console.log('supplyCap', supplyTokenReserve.supplyCap)
+    console.log('borrowCap', supplyTokenReserve.borrowCap)
+    console.log('isIsolatedAsset', supplyTokenReserve.debtCeiling === 0)
+    console.log('baseCurrency decimals', baseCurrencyInfo.marketReferenceCurrencyUnit.toString().length - 1)
+
+    const resp = await this._poolContract.getConfiguration(token)
+    const tokenConfig = resp[0]
+    let shiftedValue = tokenConfig >> 116n
+    let mask = (1n << 36n) - 1n
+    const supplyCap = shiftedValue & mask
+    shiftedValue = tokenConfig >> 48n
+    mask = (1n << 7n) - 1n
+    const decimals = shiftedValue & mask
+    console.log('from Pool', supplyCap)
+    console.log(decimals)
+
+    // const decimals = tokenConfig.slice(48,56)
+    // const isIsolatedAsset = tokenConfig.slice(61)
+    // const borrowCap = tokenConfig.slice(80, 116)
+    // [0xdAC17F958D2ee523a2206206994597C13D831ec7,Tether USD,USDT,6,7500,7800,10450,1000,true,true,true,false,1131674900196175030040169129,1181964497924486439895605249,38895280465105000290122400,50829358665954465861444837,1753965371,0x23878914EFE38d27C4D67Ab83ed1b93A74D4086a,0x6df1C1E379bC5a00a7b4C6e67A203333772f45A8,0x9ec6F08190DeA04A54f8Afc53Db96134e5E3FdFB,1078226969928068,5178920102483096,99997702,0x260326c220E469358846b187eE53328303Efe19C,55000000000000000000000000,225000000000000000000000000,0,920000000000000000000000000,false,false,11684505145,0,0,true,0,2,8000000000,8500000000,true,true,1078225815705289]/
+    // console.log('resp', decimals, isIsolatedAsset, borrowCap)
+
+    // borrow cap
   }
 
   /**
@@ -151,7 +197,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<SupplyResult>} The supply's result.
    */
   async supply (options) {
-    await this._setupProtocolConfig()
+    await this._init()
 
     if (!isAddress(options.token)) {
       throw new Error('Token must be a valid EVM address')
@@ -167,11 +213,15 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
 
     const tokenBalance = await this._account.getTokenBalance(options.token)
 
+    // todo: check if amount exceeds supply cap
+    // todo: check if supplying isolated asset, if yes, amount cannot exceeds debt ceiling
+    // todo: if supplied isolated asset before, any new supplied asset won't be used as collateral (isolation mode)
+
     if (tokenBalance < options.amount) {
       throw new Error('Insufficient fund to supply')
     }
 
-    const approveTransaction = await this._getApproveTransaction(this._poolAddress, options.token, options.amount)
+    const approveTransaction = await this._getApproveTransaction(this._poolAddressMap, options.token, options.amount)
 
     if (approveTransaction) {
       await this._account.sendTransaction(approveTransaction)
@@ -193,7 +243,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<Omit<SupplyResult, 'hash'>>} The supply's costs.
    */
   async quoteSupply(options) {
-    await this._setupProtocolConfig()
+    await this._init()
 
     if (!isAddress(options.token)) {
       throw new Error('Token must be a valid EVM address')
@@ -236,6 +286,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     }
 
     // todo: check aToken balance for withdrawal
+    // todo: must withdraw all 0 LTV tokens before any other assets
 
     const address = await this._account.getAddress()
     const withdrawData = this._poolContract.interface.encodeFunctionData('withdraw', [
@@ -247,7 +298,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     return {
       from: address,
       data: withdrawData,
-      to: this._poolAddress,
+      to: this._poolAddressMap,
       value: 0,
       gasLimit: DEFAULT_GAS_LIMIT
     }
@@ -260,7 +311,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<WithdrawResult>} The withdraw's result.
    */
   async withdraw(options) {
-    await this._setupProtocolConfig()
+    await this._init()
 
     const withdrawTransaction = await this._getWithdrawTransaction(options)
     const { hash, fee } = await this._account.sendTransaction(withdrawTransaction)
@@ -278,7 +329,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<Omit<WithdrawResult, 'hash'>>} The withdraw's result.
    */
   async quoteWithdraw(options) {
-    await this._setupProtocolConfig()
+    await this._init()
 
     const withdrawTransaction = await this._getWithdrawTransaction(options)
     const { fee } = await this._account.quoteSendTransaction(withdrawTransaction)
@@ -308,7 +359,8 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
       throw new Error('Amount must be greater than 0')
     }
 
-    // todo: check supplied collateral
+    // todo: check borrow cap
+    // todo: check borrow amount exceeds supplied collateral (under-collateralization)
     // todo: in case of delegation, check credit delegator for collateral
 
     const address = await this._account.getAddress()
@@ -323,7 +375,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     return {
       from: address,
       data: borrowData,
-      to: this._poolAddress,
+      to: this._poolAddressMap,
       value: 0,
       gasLimit: DEFAULT_GAS_LIMIT
     }
@@ -336,7 +388,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<BorrowResult>} The borrow's result.
    */
   async borrow(options) {
-    await this._setupProtocolConfig()
+    await this._init()
 
     const borrowTransaction = await this._getBorrowTransaction(options)
     const { hash, fee } = await this._account.sendTransaction(borrowTransaction)
@@ -354,7 +406,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<Omit<BorrowResult, 'hash'>>} The borrow's result.
    */
   async quoteBorrow(options) {
-    await this._setupProtocolConfig()
+    await this._init()
 
     const borrowTransaction = await this._getBorrowTransaction(options)
     const { fee } = await this._account.quoteSendTransaction(borrowTransaction)
@@ -372,7 +424,6 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<EvmTransaction>} Return the EVM transaction to repay.
    */
   async _getRepayTransaction(options) {
-    // todo: check borrow position
     const address = await this._account.getAddress()
     const repayData = this._poolContract.interface.encodeFunctionData('repay', [
       options.token,
@@ -384,7 +435,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     return {
       from: address,
       data: repayData,
-      to: this._poolAddress,
+      to: this._poolAddressMap,
       value: 0,
       gasLimit: DEFAULT_GAS_LIMIT
     }
@@ -392,12 +443,13 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
 
   /**
    * Repays a specific token amount.
+   * Enter
    *
    * @param {RepayOptions} options - The borrow's options.
    * @returns {Promise<RepayResult>} The repay's result.
    */
   async repay(options) {
-    await this._setupProtocolConfig()
+    await this._init()
 
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
       throw new Error('On behalf address must be a valid EVM address')
@@ -411,7 +463,10 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
       throw new Error('Token must be a valid EVM address')
     }
 
-    const approveTransaction = await this._getApproveTransaction(this._poolAddress, options.token, options.amount)
+    // todo: check when repay with a different token other than underlying token (can only repay with underlying or aTokens)
+    // todo: verify borrow position and repay amount when repay max amount
+
+    const approveTransaction = await this._getApproveTransaction(this._poolAddressMap, options.token, options.amount)
 
     if (approveTransaction) {
       await this._account.sendTransaction(approveTransaction)
@@ -433,7 +488,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<Omit<RepayResult, 'hash'>>} The repay's costs.
    */
   async quoteRepay(options) {
-    await this._setupProtocolConfig()
+    await this._init()
 
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
       throw new Error('On behalf address must be a valid EVM address')
@@ -461,7 +516,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<AccountData>} Returns the account's data.
    */
   async getAccountData() {
-    await this._setupProtocolConfig()
+    await this._init()
 
     const address = await this._account.getAddress()
     const userAccountData = await this._poolContract.getUserAccountData(address)
@@ -486,7 +541,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<void>}
    */
   async setUseReserveAsCollateral(token, useAsCollateral) {
-    await this._setupProtocolConfig()
+    await this._init()
 
     if (!isAddress(token)) {
       throw new Error('Token must be a valid EVM address')
@@ -503,7 +558,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     await this._account.sendTransaction({
       from: address,
       data: setUseReserveData,
-      to: this._poolAddress,
+      to: this._poolAddressMap,
       value: 0,
       gasLimit: DEFAULT_GAS_LIMIT
     })

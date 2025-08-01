@@ -17,7 +17,7 @@
     "@wdk/wdk-wallet": "https://github.com/tetherto/wdk-wallet#develop",
     "@wdk/wdk-wallet-evm": "https://github.com/tetherto/wdk-wallet-evm#develop",
     "ethers": "6.14.3",
-    "@bgd-labs/aave-address-book": "^4.25.1"
+    "@bgd-labs/aave-address-book": "4.25.3"
   },
   "devDependencies": {
     "cross-env": "7.0.3",
