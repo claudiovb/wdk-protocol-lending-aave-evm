@@ -16,12 +16,13 @@
 
 import { AbstractLendingProtocol } from '@wdk/wallet/protocols'
 
-import { IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
+import { IAToken_ABI, IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 import { Contract, isAddress, ZeroAddress } from 'ethers'
-import { AAVE_V3_ADDRESS_MAP, isBigIntInfinity } from './utils.js'
-import { AaveV3Ethereum } from '@bgd-labs/aave-address-book'
+import { AAVE_V3_ADDRESS_MAP, extractConfiguration, isBigIntInfinity, RESERVE_CONFIG_MAP } from './utils.js'
 
 import UiPoolDataProviderAbi from './UiPoolDataProvider.abi.json' with { type: 'json' }
+import { rayMul } from './math-utils/ray-math.js'
+
 /** @typedef {import('@wdk/wallet/protocols').BorrowOptions} BorrowOptions */
 /** @typedef {import('@wdk/wallet/protocols').BorrowResult} BorrowResult */
 /** @typedef {import('@wdk/wallet/protocols').SupplyOptions} SupplyOptions */
@@ -129,6 +130,75 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
   }
 
   /**
+   *
+   * @private
+   * @param {SupplyOptions} options
+   * @returns {Promise<void>}
+   */
+  async _validateSupply(options) {
+    const tokenBalance = await this._account.getTokenBalance(options.token)
+
+    if (tokenBalance < options.amount) {
+      throw new Error('Insufficient fund to supply')
+    }
+
+    const [reserves] = await this._uiPoolDataProviderContract.getReservesData(this._poolAddressMap.poolAddressesProvider)
+
+    const supplyTokenReserve = reserves.find((reserve) => reserve.underlyingAsset === options.token)
+
+    if (!supplyTokenReserve) {
+      throw new Error('Cannot find token reserve data')
+    }
+
+    if (supplyTokenReserve.isPaused) {
+      throw new Error('The reserve is paused')
+    }
+
+    if (supplyTokenReserve.isFrozen) {
+      throw new Error('The reserve is frozen')
+    }
+
+    if (!supplyTokenReserve.isActive) {
+      throw new Error('The reserve is inactive')
+    }
+
+    const aTokenContract = new Contract(supplyTokenReserve.aTokenAddress, IAToken_ABI, this._account._account.provider)
+    const aTokenScaledSupply = await aTokenContract.scaledTotalSupply()
+
+    const totalSupply = rayMul(aTokenScaledSupply + supplyTokenReserve.accruedToTreasury, supplyTokenReserve.liquidityIndex + BigInt(options.amount))
+    const supplyCapInBaseUnit = supplyTokenReserve.supplyCap * (10n ** supplyTokenReserve.decimals)
+
+    if (totalSupply > supplyCapInBaseUnit) {
+      throw new Error('Supply cap is exceeded')
+    }
+  }
+
+  /**
+   * @private
+   * @param {WithdrawOptions} options
+   * @returns {Promise<void>}
+   */
+  async _validateWithdraw(options) {
+    const [reserveConfiguration] = await this._poolContract.getConfiguration(options.token)
+
+    const isPaused = extractConfiguration(reserveConfiguration, RESERVE_CONFIG_MAP.isPaused[0], RESERVE_CONFIG_MAP.isPaused[1])
+    const isFrozen = extractConfiguration(reserveConfiguration, RESERVE_CONFIG_MAP.isFrozen[0], RESERVE_CONFIG_MAP.isFrozen[1])
+    const isActive = extractConfiguration(reserveConfiguration, RESERVE_CONFIG_MAP.isActive[0], RESERVE_CONFIG_MAP.isActive[1])
+
+    if (isPaused) {
+      throw new Error('The reserve is paused')
+    }
+
+    if (isFrozen) {
+      throw new Error('The reserve is frozen')
+    }
+
+    if (!isActive) {
+      throw new Error('The reserve is inactive')
+    }
+  }
+
+  /**
    * Returns a transaction to supply a specific token amount to the lending pool.
    *
    * @private
@@ -223,46 +293,10 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     return {
       from: address,
       data: repayData,
-      to: this._poolAddressMap,
+      to: this._poolAddressMap.pool,
       value: 0,
       gasLimit: DEFAULT_GAS_LIMIT
     }
-  }
-
-  async test() {
-    await this._init()
-    const token = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
-    const uiPoolDataContract = new Contract(AaveV3Ethereum.UI_POOL_DATA_PROVIDER, UiPoolDataProviderAbi, this._account._account.provider)
-
-    // get supply cap
-    const [reserves, baseCurrencyInfo] = await uiPoolDataContract.getReservesData(AaveV3Ethereum.POOL_ADDRESSES_PROVIDER)
-
-    const supplyTokenReserve = reserves.find((reserve) => reserve[0] === token)
-
-    // can cache reserve data for approximately 1 block
-    console.log('supplyCap', supplyTokenReserve.supplyCap)
-    console.log('borrowCap', supplyTokenReserve.borrowCap)
-    console.log('isIsolatedAsset', supplyTokenReserve.debtCeiling === 0)
-    console.log('baseCurrency decimals', baseCurrencyInfo.marketReferenceCurrencyUnit.toString().length - 1)
-
-    const resp = await this._poolContract.getConfiguration(token)
-    const tokenConfig = resp[0]
-    let shiftedValue = tokenConfig >> 116n
-    let mask = (1n << 36n) - 1n
-    const supplyCap = shiftedValue & mask
-    shiftedValue = tokenConfig >> 48n
-    mask = (1n << 7n) - 1n
-    const decimals = shiftedValue & mask
-    console.log('from Pool', supplyCap)
-    console.log(decimals)
-
-    // const decimals = tokenConfig.slice(48,56)
-    // const isIsolatedAsset = tokenConfig.slice(61)
-    // const borrowCap = tokenConfig.slice(80, 116)
-    // [0xdAC17F958D2ee523a2206206994597C13D831ec7,Tether USD,USDT,6,7500,7800,10450,1000,true,true,true,false,1131674900196175030040169129,1181964497924486439895605249,38895280465105000290122400,50829358665954465861444837,1753965371,0x23878914EFE38d27C4D67Ab83ed1b93A74D4086a,0x6df1C1E379bC5a00a7b4C6e67A203333772f45A8,0x9ec6F08190DeA04A54f8Afc53Db96134e5E3FdFB,1078226969928068,5178920102483096,99997702,0x260326c220E469358846b187eE53328303Efe19C,55000000000000000000000000,225000000000000000000000000,0,920000000000000000000000000,false,false,11684505145,0,0,true,0,2,8000000000,8500000000,true,true,1078225815705289]/
-    // console.log('resp', decimals, isIsolatedAsset, borrowCap)
-
-    // borrow cap
   }
 
   /**
@@ -286,17 +320,9 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
       throw new Error('Amount must be greater than 0')
     }
 
-    const tokenBalance = await this._account.getTokenBalance(options.token)
+    await this._validateSupply(options)
 
-    // todo: check if amount exceeds supply cap
-    // todo: check if supplying isolated asset, if yes, amount cannot exceeds debt ceiling
-    // todo: if supplied isolated asset before, any new supplied asset won't be used as collateral (isolation mode)
-
-    if (tokenBalance < options.amount) {
-      throw new Error('Insufficient fund to supply')
-    }
-
-    const approveTransaction = await this._getApproveTransaction(this._poolAddressMap, options.token, options.amount)
+    const approveTransaction = await this._getApproveTransaction(this._poolAddressMap.pool, options.token, options.amount)
 
     if (approveTransaction) {
       await this._account.sendTransaction(approveTransaction)
@@ -361,6 +387,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
       throw new Error('Amount must be greater than 0')
     }
 
+    await this._validateWithdraw(options)
     // todo: check aToken balance for withdrawal
     // todo: must withdraw all 0 LTV tokens before any other assets
 
@@ -425,6 +452,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
 
     // todo: check borrow cap
     // todo: check borrow amount exceeds supplied collateral (under-collateralization)
+    // todo: check debt ceiling when in isolation mode
     // todo: in case of delegation, check credit delegator for collateral
 
     const borrowTransaction = await this._getBorrowTransaction(options)
@@ -490,7 +518,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     // todo: check when repay with a different token other than underlying token (can only repay with underlying or aTokens)
     // todo: verify borrow position and repay amount when repay max amount
 
-    const approveTransaction = await this._getApproveTransaction(this._poolAddressMap, options.token, options.amount)
+    const approveTransaction = await this._getApproveTransaction(this._poolAddressMap.pool, options.token, options.amount)
 
     if (approveTransaction) {
       await this._account.sendTransaction(approveTransaction)
