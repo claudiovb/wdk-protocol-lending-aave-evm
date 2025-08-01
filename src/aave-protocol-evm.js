@@ -47,7 +47,7 @@ const DEFAULT_GAS_LIMIT = 300_000
 
 export default class AaveProtocolEvm extends AbstractLendingProtocol {
   /**
-   * The main contract to interact with Aave Protocol.
+   * The address mapping by chain of Aave Protocol's contracts
    *
    * @private
    * @type {Record<string, string>}
@@ -55,7 +55,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
   _poolAddressMap
 
   /**
-   * The contract object to interact on-chain.
+   * The main contract to interact with Aave Protocol.
    *
    * @private
    * @type {Contract}
@@ -63,7 +63,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
   _poolContract
 
   /**
-   * The contract object to interact on-chain.
+   * The contract to query protocol and user's information.
    *
    * @private
    * @type {Contract}
@@ -86,7 +86,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<void>}
    */
   async _init() {
-    if (this._poolAddressMap) {
+    if (this._poolAddressMap && this._poolContract && this._uiPoolDataProviderContract) {
       return;
     }
 
@@ -149,6 +149,81 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
       from: address,
       data: supplyData,
       to: this._poolAddressMap.pool,
+      value: 0,
+      gasLimit: DEFAULT_GAS_LIMIT
+    }
+  }
+
+  /**
+   * Returns a transaction to withdraw a specific token amount from the pool.
+   *
+   * @private
+   * @param {WithdrawOptions} options - The withdraw's options.
+   * @returns {Promise<EvmTransaction>} Returns the EVM transaction to withdraw.
+   */
+  async _getWithdrawTransaction(options) {
+    const address = await this._account.getAddress()
+    const withdrawData = this._poolContract.interface.encodeFunctionData('withdraw', [
+      options.token,
+      options.amount,
+      options.to || address
+    ])
+
+    return {
+      from: address,
+      data: withdrawData,
+      to: this._poolAddressMap.pool,
+      value: 0,
+      gasLimit: DEFAULT_GAS_LIMIT
+    }
+  }
+
+  /**
+   * Returns a transaction to borrow a specific token amount.
+   *
+   * @private
+   * @param {BorrowOptions} options - The borrow's options.
+   * @returns {Promise<EvmTransaction>} Returns the EVM transaction to borrow.
+   */
+  async _getBorrowTransaction(options) {
+    const address = await this._account.getAddress()
+    const borrowData = this._poolContract.interface.encodeFunctionData('borrow', [
+      options.token,
+      options.amount,
+      2, // interestRateMode - should always be passed a value of 2 (variable rate mode)
+      0, // referralCode - currently inactive, 0 means no 3rd party referral
+      options.onBehalfOf || address
+    ])
+
+    return {
+      from: address,
+      data: borrowData,
+      to: this._poolAddressMap.pool,
+      value: 0,
+      gasLimit: DEFAULT_GAS_LIMIT
+    }
+  }
+
+  /**
+   * Returns a transaction to repay a specific token amount.
+   *
+   * @private
+   * @param {RepayOptions} options - The repay's options.
+   * @returns {Promise<EvmTransaction>} Return the EVM transaction to repay.
+   */
+  async _getRepayTransaction(options) {
+    const address = await this._account.getAddress()
+    const repayData = this._poolContract.interface.encodeFunctionData('repay', [
+      options.token,
+      options.amount,
+      2, // interestRateMode - should always be passed a value of 2 (variable rate mode)
+      options.onBehalfOf || address
+    ])
+
+    return {
+      from: address,
+      data: repayData,
+      to: this._poolAddressMap,
       value: 0,
       gasLimit: DEFAULT_GAS_LIMIT
     }
@@ -266,13 +341,14 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
   }
 
   /**
-   * Returns a transaction to withdraw a specific token amount from the pool.
+   * Withdraws a specific token amount from the pool.
    *
-   * @private
    * @param {WithdrawOptions} options - The withdraw's options.
-   * @returns {Promise<EvmTransaction>} Returns the EVM transaction to withdraw.
+   * @returns {Promise<WithdrawResult>} The withdraw's result.
    */
-  async _getWithdrawTransaction(options) {
+  async withdraw(options) {
+    await this._init()
+
     if (options.to !== undefined && (options.to === ZeroAddress || !isAddress(options.to))) {
       throw new Error('To address must be a valid EVM address')
     }
@@ -287,31 +363,6 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
 
     // todo: check aToken balance for withdrawal
     // todo: must withdraw all 0 LTV tokens before any other assets
-
-    const address = await this._account.getAddress()
-    const withdrawData = this._poolContract.interface.encodeFunctionData('withdraw', [
-      options.token,
-      options.amount,
-      options.to || address
-    ])
-
-    return {
-      from: address,
-      data: withdrawData,
-      to: this._poolAddressMap,
-      value: 0,
-      gasLimit: DEFAULT_GAS_LIMIT
-    }
-  }
-
-  /**
-   * Withdraws a specific token amount from the pool.
-   *
-   * @param {WithdrawOptions} options - The withdraw's options.
-   * @returns {Promise<WithdrawResult>} The withdraw's result.
-   */
-  async withdraw(options) {
-    await this._init()
 
     const withdrawTransaction = await this._getWithdrawTransaction(options)
     const { hash, fee } = await this._account.sendTransaction(withdrawTransaction)
@@ -331,6 +382,18 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
   async quoteWithdraw(options) {
     await this._init()
 
+    if (options.to !== undefined && (options.to === ZeroAddress || !isAddress(options.to))) {
+      throw new Error('To address must be a valid EVM address')
+    }
+
+    if (!isAddress(options.token)) {
+      throw new Error('Token must be a valid EVM address')
+    }
+
+    if (options.amount <= 0) {
+      throw new Error('Amount must be greater than 0')
+    }
+
     const withdrawTransaction = await this._getWithdrawTransaction(options)
     const { fee } = await this._account.quoteSendTransaction(withdrawTransaction)
 
@@ -340,13 +403,14 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
   }
 
   /**
-   * Returns a transaction to borrow a specific token amount.
+   * Borrows a specific token amount.
    *
-   * @private
    * @param {BorrowOptions} options - The borrow's options.
-   * @returns {Promise<EvmTransaction>} Returns the EVM transaction to borrow.
+   * @returns {Promise<BorrowResult>} The borrow's result.
    */
-  async _getBorrowTransaction(options) {
+  async borrow(options) {
+    await this._init()
+
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
       throw new Error('On behalf address must be a valid EVM address')
     }
@@ -362,33 +426,6 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     // todo: check borrow cap
     // todo: check borrow amount exceeds supplied collateral (under-collateralization)
     // todo: in case of delegation, check credit delegator for collateral
-
-    const address = await this._account.getAddress()
-    const borrowData = this._poolContract.interface.encodeFunctionData('borrow', [
-      options.token,
-      options.amount,
-      2, // interestRateMode - should always be passed a value of 2 (variable rate mode)
-      0, // referralCode - currently inactive, 0 means no 3rd party referral
-      options.onBehalfOf || address
-    ])
-
-    return {
-      from: address,
-      data: borrowData,
-      to: this._poolAddressMap,
-      value: 0,
-      gasLimit: DEFAULT_GAS_LIMIT
-    }
-  }
-
-  /**
-   * Borrows a specific token amount.
-   *
-   * @param {BorrowOptions} options - The borrow's options.
-   * @returns {Promise<BorrowResult>} The borrow's result.
-   */
-  async borrow(options) {
-    await this._init()
 
     const borrowTransaction = await this._getBorrowTransaction(options)
     const { hash, fee } = await this._account.sendTransaction(borrowTransaction)
@@ -408,36 +445,23 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
   async quoteBorrow(options) {
     await this._init()
 
+    if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
+      throw new Error('On behalf address must be a valid EVM address')
+    }
+
+    if (!isAddress(options.token)) {
+      throw new Error('Token must be a valid EVM address')
+    }
+
+    if (options.amount <= 0) {
+      throw new Error('Amount must be greater than 0')
+    }
+
     const borrowTransaction = await this._getBorrowTransaction(options)
     const { fee } = await this._account.quoteSendTransaction(borrowTransaction)
 
     return {
       fee
-    }
-  }
-
-  /**
-   * Returns a transaction to repay a specific token amount.
-   *
-   * @private
-   * @param {RepayOptions} options - The repay's options.
-   * @returns {Promise<EvmTransaction>} Return the EVM transaction to repay.
-   */
-  async _getRepayTransaction(options) {
-    const address = await this._account.getAddress()
-    const repayData = this._poolContract.interface.encodeFunctionData('repay', [
-      options.token,
-      options.amount,
-      2, // interestRateMode - should always be passed a value of 2 (variable rate mode)
-      options.onBehalfOf || address
-    ])
-
-    return {
-      from: address,
-      data: repayData,
-      to: this._poolAddressMap,
-      value: 0,
-      gasLimit: DEFAULT_GAS_LIMIT
     }
   }
 
