@@ -1,10 +1,19 @@
-export default class AaveProtocolEvm extends AbstractLendingProtocol {
+export default class AaveProtocolEvm extends LendingProtocol {
     /**
      * Creates a new interface to the Aave protocol for Ethereum and Ethereum layer-2 blockchains.
      *
-     * @param {WalletAccountEvm} account - EVM wallet account to interact with Aave protocol.
+     * @overload
+     * @param {WalletAccountEvm | WalletAccountEvmErc4337} account - EVM wallet account to interact with Aave protocol.
      */
-    constructor(account: WalletAccountEvm);
+    constructor(account: WalletAccountEvm | WalletAccountEvmErc4337);
+
+    /**
+     * Creates a new read-only interface to the Aave protocol for Ethereum and Ethereum layer-2 blockchains.
+     *
+     * @overload
+     * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337} account - EVM wallet account to interact with Aave protocol.
+     */
+    constructor(account: WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337);
 
     /**
      * Returns the account’s data.
@@ -55,4 +64,7 @@ export type AccountData = {
 }
 
 export type WalletAccountEvm = import('@wdk/wdk-wallet-evm');
-export type AbstractLendingProtocol = import('@wdk/wallet/protocols').AbstractLendingProtocol;
+export type WalletAccountReadOnlyEvm = import('@wdk/wdk-wallet-evm');
+export type WalletAccountReadOnlyEvmErc4337 = import('@wdk/wdk-wallet-evm-erc-4337');
+export type WalletAccountEvmErc4337 = import('@wdk/wdk-wallet-evm-erc-4337');
+import {LendingProtocol} from "@wdk/wallet/protocols";

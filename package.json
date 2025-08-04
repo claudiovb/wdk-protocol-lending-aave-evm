@@ -16,6 +16,7 @@
   "dependencies": {
     "@wdk/wdk-wallet": "https://github.com/tetherto/wdk-wallet#develop",
     "@wdk/wdk-wallet-evm": "https://github.com/tetherto/wdk-wallet-evm#develop",
+    "@wdk/wdk-wallet-evm-erc-4337": "https://github.com/tetherto/wdk-wallet-evm-erc-4337#develop",
     "ethers": "6.14.3",
     "@bgd-labs/aave-address-book": "^4.25.1"
   },

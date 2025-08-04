@@ -14,7 +14,9 @@
 
 'use strict'
 
-import { AbstractLendingProtocol } from '@wdk/wallet/protocols'
+import { LendingProtocol } from '@wdk/wallet/protocols'
+import { WalletAccountEvm } from '@wdk/wdk-wallet-evm'
+import { WalletAccountEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337'
 
 import { IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 import { Contract, isAddress, ZeroAddress } from 'ethers'
@@ -28,8 +30,9 @@ import { AAVE_V3_POOL_ADDRESS_MAP, isBigIntInfinity } from './utils.js'
 /** @typedef {import('@wdk/wallet/protocols').WithdrawResult} WithdrawResult */
 /** @typedef {import('@wdk/wallet/protocols').RepayOptions} RepayOptions */
 /** @typedef {import('@wdk/wallet/protocols').RepayResult} RepayResult */
-/** @typedef {import('@wdk/wdk-wallet-evm').WalletAccountEvm} WalletAccountEvm */
+/** @typedef {import('@wdk/wdk-wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
 /** @typedef {import('@wdk/wdk-wallet-evm').EvmTransaction} EvmTransaction */
+/** @typedef {import('@wdk/wdk-wallet-evm-erc-4337').WalletAccountReadOnlyEvmErc4337} WalletAccountReadOnlyEvmErc4337 */
 
 /**
  * @typedef {Object} AccountData
@@ -43,7 +46,7 @@ import { AAVE_V3_POOL_ADDRESS_MAP, isBigIntInfinity } from './utils.js'
 
 const DEFAULT_GAS_LIMIT = 300_000
 
-export default class AaveProtocolEvm extends AbstractLendingProtocol {
+export default class AaveProtocolEvm extends LendingProtocol {
   /**
    * The main contract to interact with Aave Protocol.
    *
@@ -61,9 +64,17 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
   _poolContract
 
   /**
-   * Creates a handle for Aave Protocol on any EVM chain.
+   * Creates a read-only handler for Aave Protocol on any EVM chain.
    *
-   * @param {WalletAccountEvm} account - The EVM wallet that interacts with Aave Protocol.
+   * @overload
+   * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337} account - The EVM wallet that interacts with Aave Protocol.
+   */
+
+  /**
+   * Creates a handler for Aave Protocol on any EVM chain.
+   *
+   * @overload
+   * @param {WalletAccountEvm | WalletAccountEvmErc4337} account - The EVM wallet that interacts with Aave Protocol.
    */
   constructor (account) {
     super(account)
@@ -151,6 +162,10 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<SupplyResult>} The supply's result.
    */
   async supply (options) {
+    if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
+      throw new Error('This method requires a non read-only account.')
+    }
+
     await this._setupProtocolConfig()
 
     if (!isAddress(options.token)) {
@@ -260,6 +275,10 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<WithdrawResult>} The withdraw's result.
    */
   async withdraw(options) {
+    if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
+      throw new Error('This method requires a non read-only account.')
+    }
+
     await this._setupProtocolConfig()
 
     const withdrawTransaction = await this._getWithdrawTransaction(options)
@@ -336,6 +355,10 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<BorrowResult>} The borrow's result.
    */
   async borrow(options) {
+    if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
+      throw new Error('This method requires a non read-only account.')
+    }
+
     await this._setupProtocolConfig()
 
     const borrowTransaction = await this._getBorrowTransaction(options)
@@ -397,6 +420,10 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<RepayResult>} The repay's result.
    */
   async repay(options) {
+    if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
+      throw new Error('This method requires a non read-only account.')
+    }
+
     await this._setupProtocolConfig()
 
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
@@ -486,6 +513,10 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<void>}
    */
   async setUseReserveAsCollateral(token, useAsCollateral) {
+    if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
+      throw new Error('This method requires a non read-only account.')
+    }
+
     await this._setupProtocolConfig()
 
     if (!isAddress(token)) {
