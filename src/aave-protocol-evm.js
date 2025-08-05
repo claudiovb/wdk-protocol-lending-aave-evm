@@ -16,12 +16,16 @@
 
 import { AbstractLendingProtocol } from '@wdk/wallet/protocols'
 
-import { IAToken_ABI, IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
+import { IAaveOracle_ABI, IAToken_ABI, IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 import { Contract, isAddress, ZeroAddress } from 'ethers'
-import { AAVE_V3_ADDRESS_MAP, extractConfiguration, isBigIntInfinity, RESERVE_CONFIG_MAP } from './utils.js'
+import {
+  AAVE_V3_ADDRESS_MAP, extractConfiguration,
+  HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT, isBigIntInfinity, RESERVE_CONFIG_MAP
+} from './utils.js'
 
 import UiPoolDataProviderAbi from './UiPoolDataProvider.abi.json' with { type: 'json' }
 import { rayMul } from './math-utils/ray-math.js'
+import { percentDiv } from './math-utils/percentage-math.js'
 
 /** @typedef {import('@wdk/wallet/protocols').BorrowOptions} BorrowOptions */
 /** @typedef {import('@wdk/wallet/protocols').BorrowResult} BorrowResult */
@@ -165,10 +169,10 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     const aTokenContract = new Contract(supplyTokenReserve.aTokenAddress, IAToken_ABI, this._account._account.provider)
     const aTokenScaledSupply = await aTokenContract.scaledTotalSupply()
 
-    const totalSupply = rayMul(aTokenScaledSupply + supplyTokenReserve.accruedToTreasury, supplyTokenReserve.liquidityIndex + BigInt(options.amount))
+    const totalSupplyAfter = rayMul(aTokenScaledSupply + supplyTokenReserve.accruedToTreasury, supplyTokenReserve.liquidityIndex + BigInt(options.amount))
     const supplyCapInBaseUnit = supplyTokenReserve.supplyCap * (10n ** supplyTokenReserve.decimals)
 
-    if (totalSupply > supplyCapInBaseUnit) {
+    if (totalSupplyAfter > supplyCapInBaseUnit) {
       throw new Error('Supply cap is exceeded')
     }
   }
@@ -196,6 +200,86 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     if (!isActive) {
       throw new Error('The reserve is inactive')
     }
+  }
+
+  /**
+   *
+   * @private
+   * @param {BorrowOptions} options
+   * @returns {Promise<void>}
+   */
+  async _validateBorrow(options) {
+    // todo: check debt ceiling when in isolation mode
+    // todo: in case of delegation, check credit delegator for collateral
+    // todo: returns if user in e-mode or isolation mode
+    const { ltv, healthFactor, totalCollateralBase, totalDebtBase} = await this.getAccountData()
+
+    if (ltv === 0) {
+      throw new Error('Insufficient collateral to borrow')
+    }
+
+    if (totalCollateralBase === 0) {
+      throw new Error('Insufficient collateral to borrow')
+    }
+
+    if (healthFactor < HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT) {
+      throw new Error('Health factor is lower than the liquidation threshold')
+    }
+
+    const [reserves] = await this._uiPoolDataProviderContract.getReservesData(this._poolAddressMap.poolAddressesProvider)
+
+    const supplyTokenReserve = reserves.find((reserve) => reserve.underlyingAsset === options.token)
+
+    if (!supplyTokenReserve) {
+      throw new Error('Cannot find token reserve data')
+    }
+
+    if (supplyTokenReserve.isPaused) {
+      throw new Error('The reserve is paused')
+    }
+
+    if (supplyTokenReserve.isFrozen) {
+      throw new Error('The reserve is frozen')
+    }
+
+    if (!supplyTokenReserve.isActive) {
+      throw new Error('The reserve is inactive')
+    }
+
+    if (!supplyTokenReserve.borrowingEnabled) {
+      throw new Error('Borrowing is not enabled for this token')
+    }
+
+    const reserveDecimals = supplyTokenReserve.decimals
+    const borrowCapInBaseUnit = supplyTokenReserve.borrowCap * (10n ** reserveDecimals)
+    const totalSupplyVariableDebt = rayMul(supplyTokenReserve.totalScaledVariableDebt, supplyTokenReserve.variableBorrowIndex)
+    const totalDebtWithAmount = totalSupplyVariableDebt + BigInt(options.amount)
+
+    if (totalDebtWithAmount > borrowCapInBaseUnit) {
+      throw new Error('Borrow cap is exceeded')
+    }
+
+    const priceOracleContract = new Contract(this._poolAddressMap.priceOracle, IAaveOracle_ABI, this._account._account.provider)
+    const tokenPrice = await priceOracleContract.getAssetPrice(options.token)
+
+    const amountInBaseCurrency = BigInt(options.amount) * tokenPrice / (10n ** reserveDecimals) // divide by decimals first might lead to zero
+    const collateralNeededInBaseCurrency = percentDiv(BigInt(totalDebtBase) + amountInBaseCurrency, BigInt(ltv))
+
+    if (collateralNeededInBaseCurrency > totalCollateralBase) {
+      throw new Error('Not enough collateral to cover new borrow')
+    }
+  }
+
+  /**
+   *
+   * @private
+   * @param {RepayOptions} options
+   * @returns {Promise<void>}
+   */
+  async _validateRepay(options) {
+    // todo: check when repay with a different token other than underlying token (can only repay with underlying or aTokens)
+    // todo: verify borrow position and repay amount when repay max amount
+
   }
 
   /**
@@ -450,10 +534,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
       throw new Error('Amount must be greater than 0')
     }
 
-    // todo: check borrow cap
-    // todo: check borrow amount exceeds supplied collateral (under-collateralization)
-    // todo: check debt ceiling when in isolation mode
-    // todo: in case of delegation, check credit delegator for collateral
+    await this._validateBorrow(options)
 
     const borrowTransaction = await this._getBorrowTransaction(options)
     const { hash, fee } = await this._account.sendTransaction(borrowTransaction)
@@ -515,8 +596,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
       throw new Error('Token must be a valid EVM address')
     }
 
-    // todo: check when repay with a different token other than underlying token (can only repay with underlying or aTokens)
-    // todo: verify borrow position and repay amount when repay max amount
+    await this._validateRepay(options)
 
     const approveTransaction = await this._getApproveTransaction(this._poolAddressMap.pool, options.token, options.amount)
 
