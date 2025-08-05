@@ -59,4 +59,21 @@ describe('AaveProtocolEvm integration tests', () => {
       amount: 1_00_000
     })
   })
+
+  test('repay', async () => {
+    const account = new WalletAccountEvm(SEED_PHRASE, "0'/0/0", {
+      provider: DUMMY_PROVIDER
+    })
+    const aaveProtocolEvm = new AaveProtocolEvm(account)
+
+    aaveProtocolEvm._account.sendTransaction = jest.fn().mockResolvedValue({
+      hash: 'dummy-transaction-hash',
+      fee: 0
+    })
+
+    await aaveProtocolEvm.repay({
+      token: DUMMY_USDT_ADDRESS,
+      amount: 1_00_000
+    })
+  })
 })

@@ -212,7 +212,7 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
     // todo: check debt ceiling when in isolation mode
     // todo: in case of delegation, check credit delegator for collateral
     // todo: returns if user in e-mode or isolation mode
-    const { ltv, healthFactor, totalCollateralBase, totalDebtBase} = await this.getAccountData()
+    const { ltv, healthFactor, totalCollateralBase, totalDebtBase} = await this.getAccountData() // todo: might not work in case delegation
 
     if (ltv === 0) {
       throw new Error('Insufficient collateral to borrow')
@@ -277,9 +277,35 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
    * @returns {Promise<void>}
    */
   async _validateRepay(options) {
-    // todo: check when repay with a different token other than underlying token (can only repay with underlying or aTokens)
+    // todo: check when repay with aToken other than underlying token
     // todo: verify borrow position and repay amount when repay max amount
+    // todo: validate repay max amount
 
+    const [reserves] = await this._uiPoolDataProviderContract.getReservesData(this._poolAddressMap.poolAddressesProvider)
+
+    const supplyTokenReserve = reserves.find((reserve) => reserve.underlyingAsset === options.token)
+
+    if (!supplyTokenReserve) {
+      throw new Error('Cannot find token reserve data')
+    }
+
+    if (supplyTokenReserve.isPaused) {
+      throw new Error('The reserve is paused')
+    }
+
+    if (!supplyTokenReserve.isActive) {
+      throw new Error('The reserve is inactive')
+    }
+
+    // VariableDebtToken contract inherits the same class as AToken, we only need a few overlapping methods
+    const variableDebtTokenContract = new Contract(supplyTokenReserve.variableDebtTokenAddress, IAToken_ABI, this._account._account.provider)
+    const address = await this._account.getAddress()
+    const userScaledBalance = await variableDebtTokenContract.scaledBalanceOf(options.onBehalfOf || address) // todo: validate
+    const userDebt = rayMul(userScaledBalance, supplyTokenReserve.variableBorrowIndex)
+
+    if (userDebt === 0n) {
+      throw new Error('User has no debt of this type')
+    }
   }
 
   /**
@@ -576,7 +602,6 @@ export default class AaveProtocolEvm extends AbstractLendingProtocol {
 
   /**
    * Repays a specific token amount.
-   * Enter
    *
    * @param {RepayOptions} options - The borrow's options.
    * @returns {Promise<RepayResult>} The repay's result.
