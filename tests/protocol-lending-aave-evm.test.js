@@ -59,7 +59,7 @@ describe('AaveProtocolEvm', () => {
       aaveProtocolEvm._account._account.provider.getNetwork = jest.fn().mockImplementation(() => ({
         chainId: -1
       }))
-      await expect(aaveProtocolEvm._setupProtocolConfig()).rejects.toThrow('Aave protocol is not supported for this chain')
+      await expect(aaveProtocolEvm._init()).rejects.toThrow('Aave protocol is not supported for this chain')
     })
   })
 
