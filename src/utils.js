@@ -34,7 +34,6 @@ export const RESERVE_CONFIG_MAP = {
 }
 
 /**
- *
  * @param {bigint} value
  * @param {bigint} start
  * @param {bigint} end
