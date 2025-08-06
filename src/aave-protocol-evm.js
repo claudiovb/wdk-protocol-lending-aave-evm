@@ -48,22 +48,6 @@ const DEFAULT_GAS_LIMIT = 300_000
 
 export default class AaveProtocolEvm extends LendingProtocol {
   /**
-   * The main contract to interact with Aave Protocol.
-   *
-   * @private
-   * @type {string}
-   */
-  _poolAddress
-
-  /**
-   * The contract object to interact on-chain.
-   *
-   * @private
-   * @type {Contract}
-   */
-  _poolContract
-
-  /**
    * Creates a read-only handler for Aave Protocol on any EVM chain.
    *
    * @overload
@@ -78,6 +62,22 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   constructor (account) {
     super(account)
+
+    /**
+     * The main contract to interact with Aave Protocol.
+     *
+     * @private
+     * @type {string | undefined}
+     */
+    this._poolAddress = undefined
+
+    /**
+     * The contract object to interact on-chain.
+     *
+     * @private
+     * @type {Contract | undefined}
+     */
+    this._poolContract = undefined
   }
 
   /**
@@ -109,16 +109,11 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * @param {string} spender - The address that spends token.
    * @param {string} token - The token to request spending approval.
    * @param {number} amount - Amount of spending to be approved.
-   * @returns {Promise<EvmTransaction | undefined>} Returns the EVM transaction.
+   * @returns {Promise<EvmTransaction>} Returns the EVM transaction.
    */
   async _getApproveTransaction(spender, token, amount) {
     const tokenContract = new Contract(token, IERC20_ABI, this._account._account.provider)
     const owner = await this._account.getAddress()
-    const allowance = await tokenContract.allowance(owner, spender)
-
-    if (BigInt(allowance) >= BigInt(amount)) {
-      return;
-    }
 
     return {
       from: owner,

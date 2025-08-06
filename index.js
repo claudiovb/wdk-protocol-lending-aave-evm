@@ -22,8 +22,6 @@
 /** @typedef {import('@wdk/wallet/protocols').WithdrawResult} WithdrawResult */
 /** @typedef {import('@wdk/wallet/protocols').RepayOptions} RepayOptions */
 /** @typedef {import('@wdk/wallet/protocols').RepayResult} RepayResult */
-/** @typedef {import('@wdk/wdk-wallet-evm').WalletAccountEvm} WalletAccountEvm */
-/** @typedef {import('@wdk/wdk-wallet-evm').EvmTransaction} EvmTransaction */
 
 /** @typedef {import('./src/aave-protocol-evm.js').AccountData} AccountData */
 
