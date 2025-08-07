@@ -23,32 +23,10 @@ import {
   AaveV3Polygon, AaveV3Scroll, AaveV3Soneium, AaveV3Sonic, AaveV3ZkSync
 } from '@bgd-labs/aave-address-book'
 
-const MAX_UINT256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
-
-export const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT = 1e18
-
 export const RESERVE_CONFIG_MAP = {
   isActive: [56n, 56n],
   isFrozen: [57n, 57n],
   isPaused: [60n, 60n]
-}
-
-/**
- * @param {bigint} value
- * @param {bigint} start
- * @param {bigint} end
- * @returns {bigint}
- */
-export function extractConfiguration(value, start, end) {
-  const shiftedValue = value >> start
-  const length = (end - start) + 1n
-  const mask = (1n << length) - 1n
-
-  return shiftedValue & mask
-}
-
-export function isBigIntInfinity(value) {
-  return value === MAX_UINT256
 }
 
 export const AAVE_V3_ADDRESS_MAP = {

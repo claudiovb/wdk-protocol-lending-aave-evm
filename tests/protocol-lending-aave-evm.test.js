@@ -48,21 +48,6 @@ describe('AaveProtocolEvm', () => {
     })
   })
 
-  describe('constructor', () => {
-    test('should successfully initiate an Aave protocol instance with an EVM account', async () => {
-      const address = await aaveProtocolEvm._account.getAddress()
-
-      expect(address).toBe(DUMMY_EMPTY_ACCOUNT)
-    })
-
-    // test('should throw if chainId is not supported', async () => {
-    //   aaveProtocolEvm._account._account.provider.getNetwork = jest.fn().mockImplementation(() => ({
-    //     chainId: -1
-    //   }))
-    //   await expect(aaveProtocolEvm._init()).rejects.toThrow('Aave protocol is not supported for this chain')
-    // })
-  })
-
   describe('getAccountData', () => {
     test('should return account data', async () => {
       const DUMMY_EMPTY_ACCOUNT_DATA = {

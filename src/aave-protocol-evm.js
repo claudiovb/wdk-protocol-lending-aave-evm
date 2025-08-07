@@ -20,10 +20,7 @@ import { WalletAccountEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337'
 
 import { IAaveOracle_ABI, IAToken_ABI, IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 import { Contract, isAddress, ZeroAddress } from 'ethers'
-import {
-  AAVE_V3_ADDRESS_MAP, extractConfiguration,
-  HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT, isBigIntInfinity, RESERVE_CONFIG_MAP
-} from './utils.js'
+import { AAVE_V3_ADDRESS_MAP, RESERVE_CONFIG_MAP } from './constants.js'
 
 import UiPoolDataProviderAbi from './UiPoolDataProvider.abi.json' with { type: 'json' }
 import { rayMul } from './math-utils/ray-math.js'
@@ -38,8 +35,10 @@ import { percentDiv } from './math-utils/percentage-math.js'
 /** @typedef {import('@wdk/wallet/protocols').RepayOptions} RepayOptions */
 /** @typedef {import('@wdk/wallet/protocols').RepayResult} RepayResult */
 /** @typedef {import('@wdk/wdk-wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
+/** @typedef {import('@wdk/wdk-wallet-evm').WalletAccountEvm} WalletAccountEvm */
 /** @typedef {import('@wdk/wdk-wallet-evm').EvmTransaction} EvmTransaction */
 /** @typedef {import('@wdk/wdk-wallet-evm-erc-4337').WalletAccountReadOnlyEvmErc4337} WalletAccountReadOnlyEvmErc4337 */
+/** @typedef {import('@wdk/wdk-wallet-evm-erc-4337').WalletAccountEvmErc4337} WalletAccountEvmErc4337 */
 
 /**
  * @typedef {Object} AccountData
@@ -52,6 +51,21 @@ import { percentDiv } from './math-utils/percentage-math.js'
  */
 
 const DEFAULT_GAS_LIMIT = 300_000
+const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT = 1e18
+
+function isBigIntInfinity(value) {
+  const MAX_UINT256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
+
+  return value === MAX_UINT256
+}
+
+function extractConfiguration(value, start, end) {
+  const shiftedValue = value >> start
+  const length = (end - start) + 1n
+  const mask = (1n << length) - 1n
+
+  return shiftedValue & mask
+}
 
 export default class AaveProtocolEvm extends LendingProtocol {
   /**
