@@ -20,7 +20,7 @@ import { WalletAccountEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337'
 
 import { IAaveOracle_ABI, IAToken_ABI, IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 import { Contract, isAddress, ZeroAddress } from 'ethers'
-import { AAVE_V3_ADDRESS_MAP, RESERVE_CONFIG_MAP } from './constants.js'
+import { AAVE_V3_ADDRESS_MAP } from './constants.js'
 
 import UiPoolDataProviderAbi from './UiPoolDataProvider.abi.json' with { type: 'json' }
 import { rayMul } from './math-utils/ray-math.js'
@@ -52,19 +52,10 @@ import { percentDiv } from './math-utils/percentage-math.js'
 
 const DEFAULT_GAS_LIMIT = 300_000
 const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT = 1e18
+const MAX_UINT256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
 
 function isBigIntInfinity(value) {
-  const MAX_UINT256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
-
   return value === MAX_UINT256
-}
-
-function extractConfiguration(value, start, end) {
-  const shiftedValue = value >> start
-  const length = (end - start) + 1n
-  const mask = (1n << length) - 1n
-
-  return shiftedValue & mask
 }
 
 export default class AaveProtocolEvm extends LendingProtocol {
@@ -160,6 +151,21 @@ export default class AaveProtocolEvm extends LendingProtocol {
     }
   }
 
+  async _getTokenReserveData(token) {
+    const uiPoolDataProviderContract = await this._getUiPoolDataProviderContract();
+    const addressMap = await this._getAddressMap()
+
+    const [reserves] = await uiPoolDataProviderContract.getReservesData(addressMap.poolAddressesProvider)
+
+    const tokenReserve = reserves.find((reserve) => reserve.underlyingAsset === token)
+
+    if (!tokenReserve) {
+      throw new Error('Cannot find token reserve data')
+    }
+
+    return tokenReserve
+  }
+
   /**
    *
    * @private
@@ -173,34 +179,29 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error('Insufficient fund to supply')
     }
 
-    const uiPoolDataProviderContract = await this._getUiPoolDataProviderContract();
-    const addressMap = await this._getAddressMap()
+    const tokenReserve = await this._getTokenReserveData(options.token)
 
-    const [reserves] = await uiPoolDataProviderContract.getReservesData(addressMap.poolAddressesProvider)
-
-    const supplyTokenReserve = reserves.find((reserve) => reserve.underlyingAsset === options.token)
-
-    if (!supplyTokenReserve) {
+    if (!tokenReserve) {
       throw new Error('Cannot find token reserve data')
     }
 
-    if (supplyTokenReserve.isPaused) {
+    if (tokenReserve.isPaused) {
       throw new Error('The reserve is paused')
     }
 
-    if (supplyTokenReserve.isFrozen) {
+    if (tokenReserve.isFrozen) {
       throw new Error('The reserve is frozen')
     }
 
-    if (!supplyTokenReserve.isActive) {
+    if (!tokenReserve.isActive) {
       throw new Error('The reserve is inactive')
     }
 
-    const aTokenContract = new Contract(supplyTokenReserve.aTokenAddress, IAToken_ABI, this._account._account.provider)
+    const aTokenContract = new Contract(tokenReserve.aTokenAddress, IAToken_ABI, this._account._account.provider)
     const aTokenScaledSupply = await aTokenContract.scaledTotalSupply()
 
-    const totalSupplyAfterDeposit = rayMul(aTokenScaledSupply + supplyTokenReserve.accruedToTreasury, supplyTokenReserve.liquidityIndex + BigInt(options.amount))
-    const supplyCapInBaseUnit = supplyTokenReserve.supplyCap * (10n ** supplyTokenReserve.decimals)
+    const totalSupplyAfterDeposit = rayMul(aTokenScaledSupply + tokenReserve.accruedToTreasury, tokenReserve.liquidityIndex + BigInt(options.amount))
+    const supplyCapInBaseUnit = tokenReserve.supplyCap * (10n ** tokenReserve.decimals)
 
     if (totalSupplyAfterDeposit > supplyCapInBaseUnit) {
       throw new Error('Supply cap is exceeded')
@@ -213,23 +214,37 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * @returns {Promise<void>}
    */
   async _validateWithdraw(options) {
-    const poolContract = await this._getPoolContract()
-    const [reserveConfiguration] = await poolContract.getConfiguration(options.token)
+    const address = await this._account.getAddress()
+    const tokenReserve = await this._getTokenReserveData(options.token)
 
-    const isPaused = extractConfiguration(reserveConfiguration, RESERVE_CONFIG_MAP.isPaused[0], RESERVE_CONFIG_MAP.isPaused[1])
-    const isFrozen = extractConfiguration(reserveConfiguration, RESERVE_CONFIG_MAP.isFrozen[0], RESERVE_CONFIG_MAP.isFrozen[1])
-    const isActive = extractConfiguration(reserveConfiguration, RESERVE_CONFIG_MAP.isActive[0], RESERVE_CONFIG_MAP.isActive[1])
-
-    if (isPaused) {
+    if (tokenReserve.isPaused) {
       throw new Error('The reserve is paused')
     }
 
-    if (isFrozen) {
+    if (tokenReserve.isFrozen) {
       throw new Error('The reserve is frozen')
     }
 
-    if (!isActive) {
+    if (!tokenReserve.isActive) {
       throw new Error('The reserve is inactive')
+    }
+
+    const aTokenContract = new Contract(tokenReserve.aTokenAddress, IAToken_ABI, this._account._account.provider)
+    const userScaledBalance = await aTokenContract.scaledBalanceOf(address)
+    const userBalance = rayMul(userScaledBalance, tokenReserve.liquidityIndex)
+
+    if (BigInt(options.amount) > userBalance) {
+      throw new Error('User cannot withdraw more than available balance')
+    }
+
+    const { ltv, healthFactor } = await this.getAccountData()
+
+    if (healthFactor < HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT) {
+      throw new Error('Health factor is lower than the liquidation threshold')
+    }
+
+    if (ltv === 0 || tokenReserve.baseLTVasCollateral === 0) {
+      throw new Error('Invalid LTV')
     }
   }
 
@@ -240,10 +255,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * @returns {Promise<void>}
    */
   async _validateBorrow(options) {
-    // todo: check debt ceiling when in isolation mode
-    // todo: in case of delegation, check credit delegator for collateral
-    // todo: returns if user in e-mode or isolation mode
-    const { ltv, healthFactor, totalCollateralBase, totalDebtBase} = await this.getAccountData() // todo: might not work in case delegation
+    const { ltv, healthFactor, totalCollateralBase, totalDebtBase} = await this.getAccountData(options.onBehalfOf)
 
     if (ltv === 0) {
       throw new Error('Insufficient collateral to borrow')
@@ -257,35 +269,27 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error('Health factor is lower than the liquidation threshold')
     }
 
-    const uiPoolDataProviderContract = await this._getUiPoolDataProviderContract();
+    const tokenReserve = await this._getTokenReserveData(options.token)
     const addressMap = await this._getAddressMap()
 
-    const [reserves] = await uiPoolDataProviderContract.getReservesData(addressMap.poolAddressesProvider)
-
-    const supplyTokenReserve = reserves.find((reserve) => reserve.underlyingAsset === options.token)
-
-    if (!supplyTokenReserve) {
-      throw new Error('Cannot find token reserve data')
-    }
-
-    if (supplyTokenReserve.isPaused) {
+    if (tokenReserve.isPaused) {
       throw new Error('The reserve is paused')
     }
 
-    if (supplyTokenReserve.isFrozen) {
+    if (tokenReserve.isFrozen) {
       throw new Error('The reserve is frozen')
     }
 
-    if (!supplyTokenReserve.isActive) {
+    if (!tokenReserve.isActive) {
       throw new Error('The reserve is inactive')
     }
 
-    if (!supplyTokenReserve.borrowingEnabled) {
+    if (!tokenReserve.borrowingEnabled) {
       throw new Error('Borrowing is not enabled for this token')
     }
 
-    const borrowCapInBaseUnit = supplyTokenReserve.borrowCap * (10n ** supplyTokenReserve.decimals)
-    const totalSupplyVariableDebt = rayMul(supplyTokenReserve.totalScaledVariableDebt, supplyTokenReserve.variableBorrowIndex)
+    const borrowCapInBaseUnit = tokenReserve.borrowCap * (10n ** tokenReserve.decimals)
+    const totalSupplyVariableDebt = rayMul(tokenReserve.totalScaledVariableDebt, tokenReserve.variableBorrowIndex)
     const totalDebtWithAmount = totalSupplyVariableDebt + BigInt(options.amount)
 
     if (totalDebtWithAmount > borrowCapInBaseUnit) {
@@ -295,7 +299,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const priceOracleContract = new Contract(addressMap.priceOracle, IAaveOracle_ABI, this._account._account.provider)
     const tokenPrice = await priceOracleContract.getAssetPrice(options.token)
 
-    const amountInBaseCurrency = BigInt(options.amount) * tokenPrice / (10n ** supplyTokenReserve.decimals) // divide by decimals first might lead to zero
+    const amountInBaseCurrency = BigInt(options.amount) * tokenPrice / (10n ** tokenReserve.decimals) // divide by decimals first might lead to zero
     const collateralNeededInBaseCurrency = percentDiv(BigInt(totalDebtBase) + amountInBaseCurrency, BigInt(ltv))
 
     if (collateralNeededInBaseCurrency > totalCollateralBase) {
@@ -314,33 +318,45 @@ export default class AaveProtocolEvm extends LendingProtocol {
     // todo: verify borrow position and repay amount when repay max amount
     // todo: validate repay max amount
 
-    const uiPoolDataProviderContract = await this._getUiPoolDataProviderContract();
-    const addressMap = await this._getAddressMap()
+    const tokenReserve = await this._getTokenReserveData(options.token)
 
-    const [reserves] = await uiPoolDataProviderContract.getReservesData(addressMap.poolAddressesProvider)
-
-    const supplyTokenReserve = reserves.find((reserve) => reserve.underlyingAsset === options.token)
-
-    if (!supplyTokenReserve) {
+    if (!tokenReserve) {
       throw new Error('Cannot find token reserve data')
     }
 
-    if (supplyTokenReserve.isPaused) {
+    if (tokenReserve.isPaused) {
       throw new Error('The reserve is paused')
     }
 
-    if (!supplyTokenReserve.isActive) {
+    if (!tokenReserve.isActive) {
       throw new Error('The reserve is inactive')
     }
 
     // VariableDebtToken contract inherits the same class as AToken, we only need a few overlapping methods
-    const variableDebtTokenContract = new Contract(supplyTokenReserve.variableDebtTokenAddress, IAToken_ABI, this._account._account.provider)
+    const variableDebtTokenContract = new Contract(tokenReserve.variableDebtTokenAddress, IAToken_ABI, this._account._account.provider)
     const address = await this._account.getAddress()
-    const userScaledBalance = await variableDebtTokenContract.scaledBalanceOf(options.onBehalfOf || address) // todo: validate
-    const userDebt = rayMul(userScaledBalance, supplyTokenReserve.variableBorrowIndex)
+    const userScaledBalance = await variableDebtTokenContract.scaledBalanceOf(options.onBehalfOf || address)
+    const userDebt = rayMul(userScaledBalance, tokenReserve.variableBorrowIndex)
 
     if (userDebt === 0n) {
       throw new Error('User has no debt of this type')
+    }
+  }
+
+  /**
+   *
+   * @private
+   * @param {string} token
+   * @param {boolean} useAsCollateral
+   * @returns {Promise<void>}
+   */
+  async _validateUseReserveAsCollateral(token, useAsCollateral) {
+    // todo: throw error if user in isolation mode
+
+    const tokenReserve = await this._getTokenReserveData(token)
+
+    if (useAsCollateral && tokenReserve.baseLTVasCollateral === 0) {
+      throw new Error('This token cannot be used as collateral')
     }
   }
 
@@ -454,9 +470,9 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * @param {SupplyOptions} options - The supply's options.
    * @returns {Promise<SupplyResult>} The supply's result.
    */
-  async supply (options) {
+  async supply(options) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error('This method requires a non read-only account.')
+      throw new Error('This method requires a non read-only account')
     }
 
     if (!isAddress(options.token)) {
@@ -636,7 +652,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async repay(options) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error('This method requires a non read-only account.')
+      throw new Error('This method requires a non read-only account')
     }
 
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
@@ -697,12 +713,17 @@ export default class AaveProtocolEvm extends LendingProtocol {
   /**
    * Returns the account’s data.
    *
+   * @param {string} [address] - The address to query account data
    * @returns {Promise<AccountData>} Returns the account's data.
    */
-  async getAccountData() {
-    const address = await this._account.getAddress()
+  async getAccountData(address) {
+    if (address !== undefined && (address === ZeroAddress || !isAddress(address))) {
+      throw new Error('On behalf address must be a valid EVM address')
+    }
+
+    const userAddress = address ? address : await this._account.getAddress()
     const poolContract = await this._getPoolContract()
-    const userAccountData = await poolContract.getUserAccountData(address)
+    const userAccountData = await poolContract.getUserAccountData(userAddress)
 
     return {
       totalCollateralBase: Number(userAccountData[0]),
@@ -725,14 +746,14 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async setUseReserveAsCollateral(token, useAsCollateral) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error('This method requires a non read-only account.')
+      throw new Error('This method requires a non read-only account')
     }
 
     if (!isAddress(token)) {
       throw new Error('Token must be a valid EVM address')
     }
 
-    // todo: Review condition with isolation mode, LTV, health factor
+    await this._validateUseReserveAsCollateral(token, useAsCollateral)
 
     const poolContract = await this._getPoolContract()
 

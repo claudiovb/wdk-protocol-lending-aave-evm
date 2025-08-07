@@ -23,12 +23,6 @@ import {
   AaveV3Polygon, AaveV3Scroll, AaveV3Soneium, AaveV3Sonic, AaveV3ZkSync
 } from '@bgd-labs/aave-address-book'
 
-export const RESERVE_CONFIG_MAP = {
-  isActive: [56n, 56n],
-  isFrozen: [57n, 57n],
-  isPaused: [60n, 60n]
-}
-
 export const AAVE_V3_ADDRESS_MAP = {
   [AaveV3Ethereum.CHAIN_ID]: {
     pool: AaveV3Ethereum.POOL,
