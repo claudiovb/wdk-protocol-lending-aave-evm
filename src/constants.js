@@ -133,5 +133,5 @@ export const AAVE_V3_ERROR = {
   BORROW_DISABLED: 'Borrowing is not enabled for this token',
   BORROW_CAP_EXCEEDED: 'Borrow cap is exceeded',
   DEBT_NOT_FOUND: 'User has no debt of this type',
-  TOKEN_CANNOT_BE_COLLATERAL: 'This token cannot be used as collateral'
+  TOKEN_CANNOT_BE_COLLATERAL: 'This token cannot be used as collateral',
 }

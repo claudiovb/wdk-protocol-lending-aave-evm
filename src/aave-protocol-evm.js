@@ -19,7 +19,7 @@ import { WalletAccountEvm } from '@wdk/wdk-wallet-evm'
 import { WalletAccountEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337'
 
 import { IAaveOracle_ABI, IAToken_ABI, IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
-import { Contract, isAddress, ZeroAddress } from 'ethers'
+import { Contract, isAddress, MaxInt256, ZeroAddress } from 'ethers'
 import { AAVE_V3_ADDRESS_MAP, AAVE_V3_ERROR } from './constants.js'
 
 import UiPoolDataProviderAbi from './UiPoolDataProvider.abi.json' with { type: 'json' }
@@ -58,10 +58,9 @@ import { percentDiv } from './math-utils/percentage-math.js'
 
 const DEFAULT_GAS_LIMIT = 300_000
 const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT = 1e18
-const MAX_UINT256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
 
 function isBigIntInfinity(value) {
-  return value === MAX_UINT256
+  return value === MaxInt256
 }
 
 export default class AaveProtocolEvm extends LendingProtocol {
@@ -166,7 +165,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const tokenReserve = reserves.find((reserve) => reserve.underlyingAsset === token)
 
     if (!tokenReserve) {
-      throw new Error('Cannot find token reserve data')
+      throw new Error(AAVE_V3_ERROR.CANNOT_FIND_TOKEN_RESERVE)
     }
 
     return tokenReserve
@@ -186,10 +185,6 @@ export default class AaveProtocolEvm extends LendingProtocol {
     }
 
     const tokenReserve = await this._getTokenReserveData(options.token)
-
-    if (!tokenReserve) {
-      throw new Error(AAVE_V3_ERROR.CANNOT_FIND_TOKEN_RESERVE)
-    }
 
     if (tokenReserve.isPaused) {
       throw new Error(AAVE_V3_ERROR.RESERVE_PAUSED)
@@ -313,6 +308,14 @@ export default class AaveProtocolEvm extends LendingProtocol {
     }
   }
 
+  async _getUserDebtByToken(tokenReserve, address) {
+    // VariableDebtToken contract inherits the same class as AToken, we only need a few overlapping methods
+    const variableDebtTokenContract = new Contract(tokenReserve.variableDebtTokenAddress, IAToken_ABI, this._account._account.provider)
+    const userScaledBalance = await variableDebtTokenContract.scaledBalanceOf(address)
+
+    return rayMul(userScaledBalance, tokenReserve.variableBorrowIndex)
+  }
+
   /**
    *
    * @private
@@ -320,15 +323,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * @returns {Promise<void>}
    */
   async _validateRepay(options) {
-    // todo: check when repay with aToken other than underlying token
-    // todo: verify borrow position and repay amount when repay max amount
-    // todo: validate repay max amount
-
     const tokenReserve = await this._getTokenReserveData(options.token)
-
-    if (!tokenReserve) {
-      throw new Error(AAVE_V3_ERROR.CANNOT_FIND_TOKEN_RESERVE)
-    }
 
     if (tokenReserve.isPaused) {
       throw new Error(AAVE_V3_ERROR.RESERVE_PAUSED)
@@ -338,11 +333,8 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error(AAVE_V3_ERROR.RESERVE_INACTIVE)
     }
 
-    // VariableDebtToken contract inherits the same class as AToken, we only need a few overlapping methods
-    const variableDebtTokenContract = new Contract(tokenReserve.variableDebtTokenAddress, IAToken_ABI, this._account._account.provider)
     const address = await this._account.getAddress()
-    const userScaledBalance = await variableDebtTokenContract.scaledBalanceOf(options.onBehalfOf || address)
-    const userDebt = rayMul(userScaledBalance, tokenReserve.variableBorrowIndex)
+    const userDebt = await this._getUserDebtByToken(tokenReserve, options.onBehalfOf || address)
 
     if (userDebt === 0n) {
       throw new Error(AAVE_V3_ERROR.DEBT_NOT_FOUND)
@@ -403,7 +395,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const withdrawData = poolContract.interface.encodeFunctionData('withdraw', [
       options.token,
-      options.amount,
+      options.amount === Infinity ? MaxInt256 : options.amount,
       options.to || address
     ])
 
@@ -453,9 +445,22 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const address = await this._account.getAddress()
     const poolContract = await this._getPoolContract()
 
+    let amount = options.amount
+
+    if (options.amount === Infinity) {
+      if (options.onBehalfOf) {
+        const tokenReserve = await this._getTokenReserveData(options.token)
+        const userDebt = await this._getUserDebtByToken(tokenReserve, options.onBehalfOf)
+
+        amount = userDebt + 100n // set amount slightly above user debt so the protocol understands it's a full repay
+      } else {
+        amount = MaxInt256
+      }
+    }
+
     const repayData = poolContract.interface.encodeFunctionData('repay', [
       options.token,
-      options.amount,
+      amount,
       2, // interestRateMode - should always be passed a value of 2 (variable rate mode)
       options.onBehalfOf || address
     ])
@@ -537,7 +542,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
   /**
    * Withdraws a specific token amount from the pool.
    *
-   * @param {WithdrawOptions} options - The withdraw's options.
+   * @param {WithdrawOptions} options - The withdraw's options. Set Infinity as amount to withdraw the entire balance.
    * @returns {Promise<WithdrawResult>} The withdraw's result.
    */
   async withdraw(options) {
@@ -651,7 +656,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
   /**
    * Repays a specific token amount.
    *
-   * @param {RepayOptions} options - The borrow's options.
+   * @param {RepayOptions} options - The borrow's options, set Infinity as amount to repay the whole debt
    * @returns {Promise<RepayResult>} The repay's result.
    */
   async repay(options) {
