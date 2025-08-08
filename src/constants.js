@@ -115,3 +115,23 @@ export const AAVE_V3_ADDRESS_MAP = {
     priceOracle: AaveV3Metis.ORACLE
   }
 }
+
+/**
+ * @enum {string}
+ */
+export const AAVE_V3_ERROR = {
+  INSUFFICIENT_FUND: 'Insufficient fund to supply',
+  CANNOT_FIND_TOKEN_RESERVE: 'Cannot find token reserve',
+  RESERVE_PAUSED: 'The reserve is paused',
+  RESERVE_FROZEN: 'The reserve is frozen',
+  RESERVE_INACTIVE: 'The reserve is inactive',
+  SUPPLY_CAP_EXCEEDED: 'Supply cap is exceeded',
+  INSUFFICIENT_BALANCE_TO_WITHDRAW: 'Cannot withdraw more than available balance',
+  HEALTH_FACTOR_TOO_LOW: 'Health factor is lower than the liquidation threshold',
+  INVALID_LTV: 'Invalid LTV',
+  INSUFFICIENT_COLLATERAL: 'Insufficient collateral to borrow',
+  BORROW_DISABLED: 'Borrowing is not enabled for this token',
+  BORROW_CAP_EXCEEDED: 'Borrow cap is exceeded',
+  DEBT_NOT_FOUND: 'User has no debt of this type',
+  TOKEN_CANNOT_BE_COLLATERAL: 'This token cannot be used as collateral'
+}

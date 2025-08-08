@@ -46,6 +46,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
      * @returns {Promise<EvmTransaction>} Returns the EVM transaction.
      */
     private _getApproveTransaction;
+    _getTokenReserveData(token: any): Promise<any>;
     /**
      *
      * @private
@@ -73,6 +74,14 @@ export default class AaveProtocolEvm extends LendingProtocol {
      * @returns {Promise<void>}
      */
     private _validateRepay;
+    /**
+     *
+     * @private
+     * @param {string} token
+     * @param {boolean} useAsCollateral
+     * @returns {Promise<void>}
+     */
+    private _validateUseReserveAsCollateral;
     /**
      * Returns a transaction to supply a specific token amount to the lending pool.
      *
@@ -108,17 +117,18 @@ export default class AaveProtocolEvm extends LendingProtocol {
     /**
      * Returns the account’s data.
      *
+     * @param {string} [address] - The address to query account data
      * @returns {Promise<AccountData>} Returns the account's data.
      */
-    getAccountData(): Promise<AccountData>;
+    getAccountData(address?: string): Promise<AccountData>;
     /**
      * Enables/disables a specific token as a collateral for the account’s borrow operations.
      *
      * @param {string} token - The token's address.
      * @param {boolean} useAsCollateral - True if the token should be a valid collateral.
-     * @returns {Promise<void>}
+     * @returns {Promise<SetUseReserveAsCollateralResult>}
      */
-    setUseReserveAsCollateral(token: string, useAsCollateral: boolean): Promise<void>;
+    setUseReserveAsCollateral(token: string, useAsCollateral: boolean): Promise<SetUseReserveAsCollateralResult>;
 }
 export type BorrowOptions = import("@wdk/wallet/protocols").BorrowOptions;
 export type BorrowResult = import("@wdk/wallet/protocols").BorrowResult;
@@ -158,6 +168,10 @@ export type AccountData = {
      * - The account’s health factor.
      */
     healthFactor: number;
+};
+export type SetUseReserveAsCollateralResult = {
+    fee: number;
+    hash: string;
 };
 import { LendingProtocol } from '@wdk/wallet/protocols';
 import { Contract } from 'ethers';

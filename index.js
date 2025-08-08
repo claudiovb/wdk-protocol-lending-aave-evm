@@ -24,5 +24,6 @@
 /** @typedef {import('@wdk/wallet/protocols').RepayResult} RepayResult */
 
 /** @typedef {import('./src/aave-protocol-evm.js').AccountData} AccountData */
+/** @typedef {import('./src/aave-protocol-evm.js').SetUseReserveAsCollateralResult} SetUseReserveAsCollateralResult */
 
 export { default } from './src/aave-protocol-evm.js'

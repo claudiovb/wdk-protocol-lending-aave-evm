@@ -8,3 +8,4 @@ export type WithdrawResult = import("@wdk/wallet/protocols").WithdrawResult;
 export type RepayOptions = import("@wdk/wallet/protocols").RepayOptions;
 export type RepayResult = import("@wdk/wallet/protocols").RepayResult;
 export type AccountData = import("./src/aave-protocol-evm.js").AccountData;
+export type SetUseReserveAsCollateralResult = import("./src/aave-protocol-evm.js").SetUseReserveAsCollateralResult;

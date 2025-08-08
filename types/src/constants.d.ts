@@ -1,8 +1,3 @@
-export namespace RESERVE_CONFIG_MAP {
-    let isActive: bigint[];
-    let isFrozen: bigint[];
-    let isPaused: bigint[];
-}
 export const AAVE_V3_ADDRESS_MAP: {
     1: {
         pool: "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2";
@@ -95,3 +90,20 @@ export const AAVE_V3_ADDRESS_MAP: {
         priceOracle: "0x38D36e85E47eA6ff0d18B0adF12E5fC8984A6f8e";
     };
 };
+export type AAVE_V3_ERROR = string;
+export namespace AAVE_V3_ERROR {
+    let INSUFFICIENT_FUND: string;
+    let CANNOT_FIND_TOKEN_RESERVE: string;
+    let RESERVE_PAUSED: string;
+    let RESERVE_FROZEN: string;
+    let RESERVE_INACTIVE: string;
+    let SUPPLY_CAP_EXCEEDED: string;
+    let INSUFFICIENT_BALANCE_TO_WITHDRAW: string;
+    let HEALTH_FACTOR_TOO_LOW: string;
+    let INVALID_LTV: string;
+    let INSUFFICIENT_COLLATERAL: string;
+    let BORROW_DISABLED: string;
+    let BORROW_CAP_EXCEEDED: string;
+    let DEBT_NOT_FOUND: string;
+    let TOKEN_CANNOT_BE_COLLATERAL: string;
+}
