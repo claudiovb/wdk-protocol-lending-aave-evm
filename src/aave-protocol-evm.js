@@ -80,31 +80,14 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   constructor (account) {
     super(account)
-
-    /**
-     * The address mapping by chain of Aave Protocol's contracts
-     *
-     * @private
-     * @type {Record<string, string> | undefined}
-     */
-    this._addressMap = undefined
-
-    /** The main contract to interact with Aave Protocol.
-     *
-     * @private
-     * @type {Contract | undefined}
-     */
-    this._poolContract = undefined
-
-    /**
-     * The contract to query protocol and user's information.
-     *
-     * @private
-     * @type {Contract | undefined}
-     */
-    this._uiPoolDataProviderContract = undefined
   }
 
+  /**
+   * The address mapping by chain of Aave Protocol's contracts
+   *
+   * @private
+   * @returns {Record<string, string>}
+   */
   async _getAddressMap() {
     if (!this._addressMap) {
       const network = await this._account._account.provider.getNetwork()
@@ -120,6 +103,11 @@ export default class AaveProtocolEvm extends LendingProtocol {
     return this._addressMap
   }
 
+  /** The main contract to interact with Aave Protocol.
+   *
+   * @private
+   * @returns {Contract}
+   */
   async _getPoolContract() {
     if (!this._poolContract) {
       const addressMap = await this._getAddressMap()
@@ -129,6 +117,12 @@ export default class AaveProtocolEvm extends LendingProtocol {
     return this._poolContract
   }
 
+  /**
+   * The contract to query protocol and user's information.
+   *
+   * @private
+   * @returns {Contract}
+   */
   async _getUiPoolDataProviderContract() {
     if (!this._uiPoolDataProviderContract) {
       const addressMap = await this._getAddressMap()

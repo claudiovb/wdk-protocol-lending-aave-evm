@@ -17,25 +17,25 @@ export default class AaveProtocolEvm extends LendingProtocol {
      * The address mapping by chain of Aave Protocol's contracts
      *
      * @private
-     * @type {Record<string, string> | undefined}
+     * @returns {Record<string, string>}
      */
-    private _addressMap;
+    private _getAddressMap;
+    _addressMap: any;
     /** The main contract to interact with Aave Protocol.
      *
      * @private
-     * @type {Contract | undefined}
+     * @returns {Contract}
      */
-    private _poolContract;
+    private _getPoolContract;
+    _poolContract: Contract;
     /**
      * The contract to query protocol and user's information.
      *
      * @private
-     * @type {Contract | undefined}
+     * @returns {Contract}
      */
-    private _uiPoolDataProviderContract;
-    _getAddressMap(): Promise<Record<string, string>>;
-    _getPoolContract(): Promise<Contract>;
-    _getUiPoolDataProviderContract(): Promise<Contract>;
+    private _getUiPoolDataProviderContract;
+    _uiPoolDataProviderContract: Contract;
     /**
      * Returns a transaction for token spending approval.
      *
@@ -43,7 +43,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
      * @param {string} token - The token to request spending approval.
      * @param {string} spender - The address that spends token.
      * @param {number} amount - Amount of spending to be approved.
-     * @returns {Promise<EvmTransaction>} Returns the EVM transaction.
+     * @returns {EvmTransaction} Returns the EVM transaction.
      */
     private _getApproveTransaction;
     _getTokenReserveData(token: any): Promise<any>;
@@ -67,6 +67,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
      * @returns {Promise<void>}
      */
     private _validateBorrow;
+    _getUserDebtByToken(tokenReserve: any, address: any): Promise<bigint>;
     /**
      *
      * @private
@@ -115,6 +116,70 @@ export default class AaveProtocolEvm extends LendingProtocol {
      */
     private _getRepayTransaction;
     /**
+     * Supplies a specific token amount to the lending pool.
+     *
+     * @param {SupplyOptions} options - The supply's options.
+     * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+     * @returns {Promise<SupplyResult>} The supply's result.
+     */
+    supply(options: SupplyOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<SupplyResult>;
+    /**
+     * Quotes the costs of a supply operation.
+     *
+     * @param {SupplyOptions} options - The supply's options.
+     * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+     * @returns {Promise<Omit<SupplyResult, 'hash'>>} The supply's costs.
+     */
+    quoteSupply(options: SupplyOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<Omit<SupplyResult, "hash">>;
+    /**
+     * Withdraws a specific token amount from the pool.
+     *
+     * @param {WithdrawOptions} options - The withdraw's options. Set Infinity as amount to withdraw the entire balance.
+     * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+     * @returns {Promise<WithdrawResult>} The withdraw's result.
+     */
+    withdraw(options: WithdrawOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<WithdrawResult>;
+    /**
+     * Quotes the costs of a withdraw operation.
+     *
+     * @param {WithdrawOptions} options - The withdraw's options.
+     * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+     * @returns {Promise<Omit<WithdrawResult, 'hash'>>} The withdraw's result.
+     */
+    quoteWithdraw(options: WithdrawOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<Omit<WithdrawResult, "hash">>;
+    /**
+     * Borrows a specific token amount.
+     *
+     * @param {BorrowOptions} options - The borrow's options.
+     * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+     * @returns {Promise<BorrowResult>} The borrow's result.
+     */
+    borrow(options: BorrowOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<BorrowResult>;
+    /**
+     * Quotes the costs of a borrow operation.
+     *
+     * @param {BorrowOptions} options - The borrow's options.
+     * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+     * @returns {Promise<Omit<BorrowResult, 'hash'>>} The borrow's result.
+     */
+    quoteBorrow(options: BorrowOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<Omit<BorrowResult, "hash">>;
+    /**
+     * Repays a specific token amount.
+     *
+     * @param {RepayOptions} options - The borrow's options, set Infinity as amount to repay the whole debt
+     * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+     * @returns {Promise<RepayResult>} The repay's result.
+     */
+    repay(options: RepayOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<RepayResult>;
+    /**
+     * Quotes the costs of a repay operation.
+     *
+     * @param {RepayOptions} options - The repay's options.
+     * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+     * @returns {Promise<Omit<RepayResult, 'hash'>>} The repay's costs.
+     */
+    quoteRepay(options: RepayOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<Omit<RepayResult, "hash">>;
+    /**
      * Returns the account’s data.
      *
      * @param {string} [address] - The address to query account data
@@ -126,9 +191,10 @@ export default class AaveProtocolEvm extends LendingProtocol {
      *
      * @param {string} token - The token's address.
      * @param {boolean} useAsCollateral - True if the token should be a valid collateral.
+     * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
      * @returns {Promise<SetUseReserveAsCollateralResult>}
      */
-    setUseReserveAsCollateral(token: string, useAsCollateral: boolean): Promise<SetUseReserveAsCollateralResult>;
+    setUseReserveAsCollateral(token: string, useAsCollateral: boolean, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<SetUseReserveAsCollateralResult>;
 }
 export type BorrowOptions = import("@wdk/wallet/protocols").BorrowOptions;
 export type BorrowResult = import("@wdk/wallet/protocols").BorrowResult;
@@ -143,6 +209,7 @@ export type WalletAccountEvm = import("@wdk/wdk-wallet-evm").WalletAccountEvm;
 export type EvmTransaction = import("@wdk/wdk-wallet-evm").EvmTransaction;
 export type WalletAccountReadOnlyEvmErc4337 = import("@wdk/wdk-wallet-evm-erc-4337").WalletAccountReadOnlyEvmErc4337;
 export type WalletAccountEvmErc4337 = import("@wdk/wdk-wallet-evm-erc-4337").WalletAccountEvmErc4337;
+export type EvmErc4337WalletConfig = import("@wdk/wdk-wallet-evm-erc-4337").EvmErc4337WalletConfig;
 export type AccountData = {
     /**
      * - The account’s total collateral base.
