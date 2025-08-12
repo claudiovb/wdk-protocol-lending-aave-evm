@@ -39,6 +39,7 @@ import { percentDiv } from './math-utils/percentage-math.js'
 /** @typedef {import('@wdk/wdk-wallet-evm').EvmTransaction} EvmTransaction */
 /** @typedef {import('@wdk/wdk-wallet-evm-erc-4337').WalletAccountReadOnlyEvmErc4337} WalletAccountReadOnlyEvmErc4337 */
 /** @typedef {import('@wdk/wdk-wallet-evm-erc-4337').WalletAccountEvmErc4337} WalletAccountEvmErc4337 */
+/** @typedef {import('@wdk/wdk-wallet-evm-erc-4337').EvmErc4337WalletConfig} EvmErc4337WalletConfig */
 
 /**
  * @typedef {Object} AccountData
@@ -144,9 +145,9 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * @param {string} token - The token to request spending approval.
    * @param {string} spender - The address that spends token.
    * @param {number} amount - Amount of spending to be approved.
-   * @returns {Promise<EvmTransaction>} Returns the EVM transaction.
+   * @returns {EvmTransaction} Returns the EVM transaction.
    */
-  async _getApproveTransaction(token, spender, amount) {
+  _getApproveTransaction(token, spender, amount) {
     const tokenContract = new Contract(token, IERC20_ABI, this._account._account.provider)
 
     return {
@@ -477,9 +478,10 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * Supplies a specific token amount to the lending pool.
    *
    * @param {SupplyOptions} options - The supply's options.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
    * @returns {Promise<SupplyResult>} The supply's result.
    */
-  async supply(options) {
+  async supply(options, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
       throw new Error('This method requires a non read-only account')
     }
@@ -500,14 +502,18 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const addressMap = await this._getAddressMap()
 
-    const approveTransaction = await this._getApproveTransaction(options.token, addressMap.pool, options.amount)
-    await this._account.sendTransaction(approveTransaction)
+    const approveTx = this._getApproveTransaction(options.token, addressMap.pool, options.amount)
+    const supplyTx = await this._getSupplyTransaction(options)
 
-    const supplyTransaction = await this._getSupplyTransaction(options)
-    const { hash, fee } = await this._account.sendTransaction(supplyTransaction)
+    if (this._account instanceof WalletAccountEvmErc4337) {
+      return await this._account.sendTransaction([approveTx, supplyTx], config)
+    }
+
+    const { fee: approveFee } = await this._account.sendTransaction(approveTx)
+    const { hash, fee } = await this._account.sendTransaction(supplyTx)
 
     return {
-      fee,
+      fee: fee + approveFee,
       hash
     }
   }
@@ -516,9 +522,10 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * Quotes the costs of a supply operation.
    *
    * @param {SupplyOptions} options - The supply's options.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
    * @returns {Promise<Omit<SupplyResult, 'hash'>>} The supply's costs.
    */
-  async quoteSupply(options) {
+  async quoteSupply(options, config) {
     if (!isAddress(options.token)) {
       throw new Error('Token must be a valid EVM address')
     }
@@ -531,11 +538,22 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error('Amount must be greater than 0')
     }
 
-    const supplyTransaction = await this._getSupplyTransaction(options)
-    const { fee } = await this._account.quoteSendTransaction(supplyTransaction)
+    const addressMap = await this._getAddressMap()
+
+    const approveTx = this._getApproveTransaction(options.token, addressMap.pool, options.amount)
+    const supplyTx = await this._getSupplyTransaction(options)
+
+    if (this._account instanceof WalletAccountEvmErc4337) {
+      return this._account.quoteSendTransaction([approveTx, supplyTx], config)
+    }
+
+    const [approveQuote, supplyQuote] = await Promise.all([
+      this._account.quoteSendTransaction(approveTx),
+      this._account.quoteSendTransaction(supplyTx)
+    ])
 
     return {
-      fee
+      fee: approveQuote.fee + supplyQuote.fee
     }
   }
 
@@ -543,9 +561,10 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * Withdraws a specific token amount from the pool.
    *
    * @param {WithdrawOptions} options - The withdraw's options. Set Infinity as amount to withdraw the entire balance.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
    * @returns {Promise<WithdrawResult>} The withdraw's result.
    */
-  async withdraw(options) {
+  async withdraw(options, config) {
     if (options.to !== undefined && (options.to === ZeroAddress || !isAddress(options.to))) {
       throw new Error('To address must be a valid EVM address')
     }
@@ -560,22 +579,23 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     await this._validateWithdraw(options)
 
-    const withdrawTransaction = await this._getWithdrawTransaction(options)
-    const { hash, fee } = await this._account.sendTransaction(withdrawTransaction)
+    const withdrawTx = await this._getWithdrawTransaction(options)
 
-    return {
-      hash,
-      fee
+    if (this._account instanceof WalletAccountEvmErc4337) {
+      return await this._account.sendTransaction(withdrawTx, config)
     }
+
+    return await this._account.sendTransaction(withdrawTx)
   }
 
   /**
    * Quotes the costs of a withdraw operation.
    *
    * @param {WithdrawOptions} options - The withdraw's options.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
    * @returns {Promise<Omit<WithdrawResult, 'hash'>>} The withdraw's result.
    */
-  async quoteWithdraw(options) {
+  async quoteWithdraw(options, config) {
     if (options.to !== undefined && (options.to === ZeroAddress || !isAddress(options.to))) {
       throw new Error('To address must be a valid EVM address')
     }
@@ -588,21 +608,23 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error('Amount must be greater than 0')
     }
 
-    const withdrawTransaction = await this._getWithdrawTransaction(options)
-    const { fee } = await this._account.quoteSendTransaction(withdrawTransaction)
+    const withdrawTx = await this._getWithdrawTransaction(options)
 
-    return {
-      fee
+    if (this._account instanceof WalletAccountEvmErc4337) {
+      return await this._account.quoteSendTransaction(withdrawTx, config)
     }
+
+    return await this._account.quoteSendTransaction(withdrawTx)
   }
 
   /**
    * Borrows a specific token amount.
    *
    * @param {BorrowOptions} options - The borrow's options.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
    * @returns {Promise<BorrowResult>} The borrow's result.
    */
-  async borrow(options) {
+  async borrow(options, config) {
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
       throw new Error('On behalf address must be a valid EVM address')
     }
@@ -617,22 +639,23 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     await this._validateBorrow(options)
 
-    const borrowTransaction = await this._getBorrowTransaction(options)
-    const { hash, fee } = await this._account.sendTransaction(borrowTransaction)
+    const borrowTx = await this._getBorrowTransaction(options)
 
-    return {
-      hash,
-      fee
+    if (this._account instanceof WalletAccountEvmErc4337) {
+      return await this._account.sendTransaction(borrowTx, config)
     }
+
+    return await this._account.sendTransaction(borrowTx)
   }
 
   /**
    * Quotes the costs of a borrow operation.
    *
    * @param {BorrowOptions} options - The borrow's options.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
    * @returns {Promise<Omit<BorrowResult, 'hash'>>} The borrow's result.
    */
-  async quoteBorrow(options) {
+  async quoteBorrow(options, config) {
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
       throw new Error('On behalf address must be a valid EVM address')
     }
@@ -645,21 +668,23 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error('Amount must be greater than 0')
     }
 
-    const borrowTransaction = await this._getBorrowTransaction(options)
-    const { fee } = await this._account.quoteSendTransaction(borrowTransaction)
+    const borrowTx = await this._getBorrowTransaction(options)
 
-    return {
-      fee
+    if (this._account instanceof WalletAccountEvmErc4337) {
+      return await this._account.quoteSendTransaction(borrowTx, config)
     }
+
+    return await this._account.quoteSendTransaction(borrowTx)
   }
 
   /**
    * Repays a specific token amount.
    *
    * @param {RepayOptions} options - The borrow's options, set Infinity as amount to repay the whole debt
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
    * @returns {Promise<RepayResult>} The repay's result.
    */
-  async repay(options) {
+  async repay(options, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
       throw new Error('This method requires a non read-only account')
     }
@@ -680,15 +705,19 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const addressMap = await this._getAddressMap()
 
-    const approveTransaction = await this._getApproveTransaction(options.token, addressMap.pool, options.amount)
-    await this._account.sendTransaction(approveTransaction)
+    const approveTx = this._getApproveTransaction(options.token, addressMap.pool, options.amount)
+    const repayTx = await this._getRepayTransaction(options)
 
-    const repayTransaction = await this._getRepayTransaction(options)
-    const { hash, fee } = await this._account.sendTransaction(repayTransaction)
+    if (this._account instanceof WalletAccountEvmErc4337) {
+      return this._account.sendTransaction([approveTx, repayTx], config)
+    }
+
+    const { fee: approveFee } = await this._account.sendTransaction(approveTx)
+    const { hash, fee } = await this._account.sendTransaction(repayTx)
 
     return {
       hash,
-      fee
+      fee: approveFee + fee
     }
   }
 
@@ -696,9 +725,10 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * Quotes the costs of a repay operation.
    *
    * @param {RepayOptions} options - The repay's options.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
    * @returns {Promise<Omit<RepayResult, 'hash'>>} The repay's costs.
    */
-  async quoteRepay(options) {
+  async quoteRepay(options, config) {
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
       throw new Error('On behalf address must be a valid EVM address')
     }
@@ -711,11 +741,22 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error('Token must be a valid EVM address')
     }
 
-    const repayTransaction = await this._getRepayTransaction(options)
-    const { fee } = await this._account.quoteSendTransaction(repayTransaction)
+    const addressMap = await this._getAddressMap()
+
+    const approveTx = this._getApproveTransaction(options.token, addressMap.pool, options.amount)
+    const repayTx = await this._getRepayTransaction(options)
+
+    if (this._account instanceof WalletAccountEvmErc4337) {
+      return this._account.quoteSendTransaction([approveTx, repayTx], config)
+    }
+
+    const [approveQuote, repayQuote] = await Promise.all([
+      this._account.quoteSendTransaction(approveTx),
+      this._account.quoteSendTransaction(repayTx)
+    ])
 
     return {
-      fee
+      fee: approveQuote.fee + repayQuote.fee
     }
   }
 
@@ -751,9 +792,10 @@ export default class AaveProtocolEvm extends LendingProtocol {
    *
    * @param {string} token - The token's address.
    * @param {boolean} useAsCollateral - True if the token should be a valid collateral.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
    * @returns {Promise<SetUseReserveAsCollateralResult>}
    */
-  async setUseReserveAsCollateral(token, useAsCollateral) {
+  async setUseReserveAsCollateral(token, useAsCollateral, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
       throw new Error('This method requires a non read-only account')
     }
@@ -771,16 +813,17 @@ export default class AaveProtocolEvm extends LendingProtocol {
       useAsCollateral
     ])
 
-    const { fee, hash } = await this._account.sendTransaction({
+    const tx = {
       data: setUseReserveData,
       to: poolContract.target,
       value: 0,
       gasLimit: DEFAULT_GAS_LIMIT
-    })
-
-    return {
-      fee,
-      hash
     }
+
+    if (this._account instanceof WalletAccountEvmErc4337) {
+      return this._account.sendTransaction(tx, config)
+    }
+
+    return await this._account.sendTransaction(tx)
   }
 }

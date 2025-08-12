@@ -15,10 +15,10 @@
 'use strict'
 
 // Maximum percentage factor (100.00%)
-const PERCENTAGE_FACTOR = BigInt(1e4)
+const PERCENTAGE_FACTOR = 10n ** 4n
 
 // Half percentage factor (50.00%)
-const HALF_PERCENTAGE_FACTOR = BigInt(0.5e4)
+const HALF_PERCENTAGE_FACTOR = PERCENTAGE_FACTOR / 2n
 
 /**
  *
