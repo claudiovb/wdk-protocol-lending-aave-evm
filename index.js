@@ -25,5 +25,6 @@
 
 /** @typedef {import('./src/aave-protocol-evm.js').AccountData} AccountData */
 /** @typedef {import('./src/aave-protocol-evm.js').SetUseReserveAsCollateralResult} SetUseReserveAsCollateralResult */
+/** @typedef {import('./src/aave-protocol-evm.js').SetUserEModeResult} SetUserEModeResult */
 
 export { default } from './src/aave-protocol-evm.js'

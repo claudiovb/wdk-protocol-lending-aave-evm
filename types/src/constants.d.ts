@@ -106,4 +106,9 @@ export namespace AAVE_V3_ERROR {
     let BORROW_CAP_EXCEEDED: string;
     let DEBT_NOT_FOUND: string;
     let TOKEN_CANNOT_BE_COLLATERAL: string;
+    let INVALID_CATEGORY_ID: string;
+    let REQUIRE_ACCOUNT_WITH_SIGNER: string;
+    let INVALID_ADDRESS: string;
+    let INVALID_AMOUNT: string;
+    let CHAIN_NOT_SUPPORTED: string;
 }

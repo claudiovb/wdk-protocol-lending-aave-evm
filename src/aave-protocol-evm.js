@@ -57,6 +57,12 @@ import { percentDiv } from './math-utils/percentage-math.js'
  * @property {string} hash
  */
 
+/**
+ * @typedef SetUserEModeResult
+ * @property {number} fee
+ * @property {string} hash
+ */
+
 const DEFAULT_GAS_LIMIT = 300_000
 const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT = 1e18
 
@@ -94,7 +100,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
       const chainId = network.chainId
 
       if (!AAVE_V3_ADDRESS_MAP[chainId]) {
-        throw new Error('This chain is not supported')
+        throw new Error(AAVE_V3_ERROR.CHAIN_NOT_SUPPORTED)
       }
 
       this._addressMap = AAVE_V3_ADDRESS_MAP[chainId]
@@ -477,19 +483,19 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async supply(options, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error('This method requires a non read-only account')
+      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
     }
 
     if (!isAddress(options.token)) {
-      throw new Error('Token must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error('On behalf address must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (options.amount <= 0) {
-      throw new Error('Amount must be greater than 0')
+      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
     }
 
     await this._validateSupply(options)
@@ -521,15 +527,15 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async quoteSupply(options, config) {
     if (!isAddress(options.token)) {
-      throw new Error('Token must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error('On behalf address must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (options.amount <= 0) {
-      throw new Error('Amount must be greater than 0')
+      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
     }
 
     const addressMap = await this._getAddressMap()
@@ -560,15 +566,15 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async withdraw(options, config) {
     if (options.to !== undefined && (options.to === ZeroAddress || !isAddress(options.to))) {
-      throw new Error('To address must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (!isAddress(options.token)) {
-      throw new Error('Token must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (options.amount <= 0) {
-      throw new Error('Amount must be greater than 0')
+      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
     }
 
     await this._validateWithdraw(options)
@@ -591,15 +597,15 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async quoteWithdraw(options, config) {
     if (options.to !== undefined && (options.to === ZeroAddress || !isAddress(options.to))) {
-      throw new Error('To address must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (!isAddress(options.token)) {
-      throw new Error('Token must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (options.amount <= 0) {
-      throw new Error('Amount must be greater than 0')
+      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
     }
 
     const withdrawTx = await this._getWithdrawTransaction(options)
@@ -620,15 +626,15 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async borrow(options, config) {
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error('On behalf address must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (!isAddress(options.token)) {
-      throw new Error('Token must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (options.amount <= 0) {
-      throw new Error('Amount must be greater than 0')
+      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
     }
 
     await this._validateBorrow(options)
@@ -651,15 +657,15 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async quoteBorrow(options, config) {
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error('On behalf address must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
     }
 
     if (!isAddress(options.token)) {
-      throw new Error('Token must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (options.amount <= 0) {
-      throw new Error('Amount must be greater than 0')
+      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
     }
 
     const borrowTx = await this._getBorrowTransaction(options)
@@ -680,19 +686,19 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async repay(options, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error('This method requires a non read-only account')
+      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
     }
 
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error('On behalf address must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (options.amount <= 0) {
-      throw new Error('Amount must be greater than 0')
+      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
     }
 
     if (!isAddress(options.token)) {
-      throw new Error('Token must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     await this._validateRepay(options)
@@ -724,15 +730,15 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async quoteRepay(options, config) {
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error('On behalf address must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (options.amount <= 0) {
-      throw new Error('Amount must be greater than 0')
+      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
     }
 
     if (!isAddress(options.token)) {
-      throw new Error('Token must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     const addressMap = await this._getAddressMap()
@@ -762,7 +768,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async getAccountData(address) {
     if (address !== undefined && (address === ZeroAddress || !isAddress(address))) {
-      throw new Error('On behalf address must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     const userAddress = address ? address : await this._account.getAddress()
@@ -791,11 +797,11 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async setUseReserveAsCollateral(token, useAsCollateral, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error('This method requires a non read-only account')
+      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
     }
 
     if (!isAddress(token)) {
-      throw new Error('Token must be a valid EVM address')
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     await this._validateUseReserveAsCollateral(token, useAsCollateral)
@@ -810,8 +816,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const tx = {
       data: setUseReserveData,
       to: poolContract.target,
-      value: 0,
-      gasLimit: DEFAULT_GAS_LIMIT
+      value: 0
     }
 
     if (this._account instanceof WalletAccountEvmErc4337) {
@@ -819,5 +824,36 @@ export default class AaveProtocolEvm extends LendingProtocol {
     }
 
     return await this._account.sendTransaction(tx)
+  }
+
+  /**
+   * Allows user to use the protocol in efficiency mode
+   *
+   * @param {number} categoryId - The eMode category id (0 - 255) defined by Risk or Pool Admins. categoryId set to 0 is a non eMode category
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config]
+   * @returns {Promise<SetUserEModeResult>}
+   */
+  async setUserEMode(categoryId, config) {
+    if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
+      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
+    }
+
+    if (categoryId < 0 || categoryId > 255) {
+      throw new Error(AAVE_V3_ERROR.INVALID_CATEGORY_ID)
+    }
+
+    const poolContract = await this._getPoolContract()
+    const setUserEModeData = poolContract.interface.encodeFunctionData('setUserEMode', [categoryId])
+    const tx = {
+      data: setUserEModeData,
+      to: poolContract.target,
+      value: 0
+    }
+
+    if (this._account instanceof WalletAccountEvmErc4337) {
+      return this._account.sendTransaction(tx, config)
+    }
+
+    return this._account.sendTransaction(tx)
   }
 }

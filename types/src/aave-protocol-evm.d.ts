@@ -195,6 +195,14 @@ export default class AaveProtocolEvm extends LendingProtocol {
      * @returns {Promise<SetUseReserveAsCollateralResult>}
      */
     setUseReserveAsCollateral(token: string, useAsCollateral: boolean, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<SetUseReserveAsCollateralResult>;
+    /**
+     * Allows user to use the protocol in efficiency mode
+     *
+     * @param {number} categoryId - The eMode category id (0 - 255) defined by Risk or Pool Admins. categoryId set to 0 is a non eMode category
+     * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config]
+     * @returns {Promise<SetUserEModeResult>}
+     */
+    setUserEMode(categoryId: number, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<SetUserEModeResult>;
 }
 export type BorrowOptions = import("@wdk/wallet/protocols").BorrowOptions;
 export type BorrowResult = import("@wdk/wallet/protocols").BorrowResult;
@@ -237,6 +245,10 @@ export type AccountData = {
     healthFactor: number;
 };
 export type SetUseReserveAsCollateralResult = {
+    fee: number;
+    hash: string;
+};
+export type SetUserEModeResult = {
     fee: number;
     hash: string;
 };

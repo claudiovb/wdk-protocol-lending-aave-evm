@@ -140,4 +140,9 @@ export const AAVE_V3_ERROR = {
   BORROW_CAP_EXCEEDED: 'Borrow cap is exceeded',
   DEBT_NOT_FOUND: 'User has no debt of this type',
   TOKEN_CANNOT_BE_COLLATERAL: 'This token cannot be used as collateral',
+  INVALID_CATEGORY_ID: 'Invalid category ID',
+  REQUIRE_ACCOUNT_WITH_SIGNER: 'This method requires a non read-only account',
+  INVALID_ADDRESS: 'Invalid EVM address',
+  INVALID_AMOUNT: 'Amount must be greater than 0',
+  CHAIN_NOT_SUPPORTED: 'This chain is not supported'
 }
