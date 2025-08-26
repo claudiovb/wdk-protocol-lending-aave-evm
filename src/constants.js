@@ -18,7 +18,7 @@ import {
   AaveV3Arbitrum,
   AaveV3Avalanche,
   AaveV3Base, AaveV3BNB, AaveV3Celo,
-  AaveV3Ethereum, AaveV3EthereumEtherFi, AaveV3Gnosis, AaveV3Linea, AaveV3Metis,
+  AaveV3Ethereum, AaveV3Gnosis, AaveV3Linea, AaveV3Metis,
   AaveV3Optimism,
   AaveV3Polygon, AaveV3Scroll, AaveV3Soneium, AaveV3Sonic, AaveV3ZkSync
 } from '@bgd-labs/aave-address-book'
@@ -113,12 +113,6 @@ export const AAVE_V3_ADDRESS_MAP = {
     uiPoolDataProvider: AaveV3Metis.UI_POOL_DATA_PROVIDER,
     poolAddressesProvider: AaveV3Metis.POOL_ADDRESSES_PROVIDER,
     priceOracle: AaveV3Metis.ORACLE
-  },
-  [AaveV3EthereumEtherFi.CHAIN_ID]: {
-    pool: AaveV3EthereumEtherFi.POOL,
-    uiPoolDataProvider: AaveV3EthereumEtherFi.UI_POOL_DATA_PROVIDER,
-    poolAddressesProvider: AaveV3EthereumEtherFi.POOL_ADDRESSES_PROVIDER,
-    priceOracle: AaveV3EthereumEtherFi.ORACLE
   }
 }
 

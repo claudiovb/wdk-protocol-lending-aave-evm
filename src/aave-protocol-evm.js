@@ -64,7 +64,7 @@ import { percentDiv } from './math-utils/percentage-math.js'
  */
 
 const DEFAULT_GAS_LIMIT = 300_000
-const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT = 1e18
+export const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT = 1e18
 
 function isBigIntInfinity(value) {
   return value === MaxInt256
@@ -92,7 +92,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * The address mapping by chain of Aave Protocol's contracts
    *
    * @private
-   * @returns {Record<string, string>}
+   * @returns {Promise<Record<string, string>>}
    */
   async _getAddressMap() {
     if (!this._addressMap) {
@@ -112,7 +112,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
   /** The main contract to interact with Aave Protocol.
    *
    * @private
-   * @returns {Contract}
+   * @returns {Promise<Contract>}
    */
   async _getPoolContract() {
     if (!this._poolContract) {
@@ -127,7 +127,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * The contract to query protocol and user's information.
    *
    * @private
-   * @returns {Contract}
+   * @returns {Promise<Contract>}
    */
   async _getUiPoolDataProviderContract() {
     if (!this._uiPoolDataProviderContract) {
@@ -163,7 +163,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const [reserves] = await uiPoolDataProviderContract.getReservesData(addressMap.poolAddressesProvider)
 
-    const tokenReserve = reserves.find((reserve) => reserve.underlyingAsset === token)
+    const tokenReserve = reserves.find((reserve) => reserve.underlyingAsset.toLowerCase() === token.toLowerCase())
 
     if (!tokenReserve) {
       throw new Error(AAVE_V3_ERROR.CANNOT_FIND_TOKEN_RESERVE)
@@ -344,7 +344,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
   /**
    *
-   * @private
+   * @TOKEN_CANNOT_BE_COLLATERAL
    * @param {string} token
    * @param {boolean} useAsCollateral
    * @returns {Promise<void>}
@@ -565,6 +565,10 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * @returns {Promise<WithdrawResult>} The withdraw's result.
    */
   async withdraw(options, config) {
+    if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
+      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
+    }
+
     if (options.to !== undefined && (options.to === ZeroAddress || !isAddress(options.to))) {
       throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
@@ -625,6 +629,10 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * @returns {Promise<BorrowResult>} The borrow's result.
    */
   async borrow(options, config) {
+    if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
+      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
+    }
+
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
       throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
@@ -657,7 +665,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async quoteBorrow(options, config) {
     if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
+      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
     }
 
     if (!isAddress(options.token)) {

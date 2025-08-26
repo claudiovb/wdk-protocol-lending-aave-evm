@@ -1,22 +1,34 @@
-import { IPool_ABI } from '@bgd-labs/aave-address-book/abis'
+import { IAToken_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 import { describe, expect, test, jest, beforeEach } from '@jest/globals'
 import { WalletAccountEvm } from '@wdk/wdk-wallet-evm'
+import UiPoolDataProviderAbi from '../src/UiPoolDataProvider.abi.json' with { type: 'json' }
 
 import * as ethers from 'ethers'
 import { AAVE_V3_ADDRESS_MAP, AAVE_V3_ERROR } from '../src/constants.js'
+import { HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT } from '../src/aave-protocol-evm.js'
 const { Contract } = ethers
 
 const SEED_PHRASE = 'cook voyage document eight skate token alien guide drink uncle term abuse'
 
-const DUMMY_EMPTY_ACCOUNT = '0xD073A82eDFc66F8627038894b486cfe94153Fe28'
-const DUMMY_ON_BEHALF_OF_ACCOUNT = '0xc0ffee254729296a45a3885639AC7E10F9d54979'
 
 // Ethereum
-const DUMMY_PROVIDER = 'https://virtual.mainnet.rpc.tenderly.co/359bdebd-10a4-4a86-98f7-a208cbe6f360'
+const DUMMY_PROVIDER = 'https://eth.llamarpc.com'
 const DUMMY_ADDRESS_MAP = AAVE_V3_ADDRESS_MAP[1]
 const DUMMY_POOL_ADDRESS = DUMMY_ADDRESS_MAP.pool
 const DUMMY_USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
-const DUMMY_BNB_ADDRESS = '0xB8c77482e45F1F44dE1745F52C74426C631bDD52'
+const DUMMY_ON_BEHALF_OF_ACCOUNT = '0xc0ffee254729296a45a3885639AC7E10F9d54979'
+
+const DUMMY_RESERVE_DATA = {
+  underlyingAsset: DUMMY_USDT_ADDRESS,
+  isPaused: false,
+  isFrozen: false,
+  isActive: true,
+  aTokenAddress: DUMMY_USDT_ADDRESS,
+  accruedToTreasury: 1n,
+  liquidityIndex: 0n,
+  supplyCap: ethers.MaxInt256,
+  decimals: 0n
+}
 
 const DUMMY_TX_RESULT = {
   hash: 'dummy-hash',
@@ -24,6 +36,9 @@ const DUMMY_TX_RESULT = {
 }
 
 const getUserAccountDataMock = jest.fn()
+const getReservesDataMock = jest.fn()
+const scaledTotalSupplyMock = jest.fn()
+const scaledBalanceOfMock = jest.fn()
 
 jest.unstable_mockModule('ethers', () => ({
   ...ethers,
@@ -32,6 +47,15 @@ jest.unstable_mockModule('ethers', () => ({
 
     if (args[1] === IPool_ABI) {
       contract.getUserAccountData = getUserAccountDataMock
+    }
+
+    if (args[1] === UiPoolDataProviderAbi) {
+      contract.getReservesData = getReservesDataMock
+    }
+
+    if (args[1] === IAToken_ABI) {
+      contract.scaledTotalSupply = scaledTotalSupplyMock
+      contract.scaledBalanceOf = scaledBalanceOfMock
     }
 
     return contract
@@ -54,14 +78,6 @@ describe('AaveProtocolEvm', () => {
 
   describe('getAccountData', () => {
     test('should return account data', async () => {
-      const DUMMY_EMPTY_ACCOUNT_DATA = {
-        totalCollateralBase: 0,
-        totalDebtBase: 0,
-        availableBorrowsBase: 0,
-        currentLiquidationThreshold: 0,
-        ltv: 0,
-        healthFactor: 0
-      }
       aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(AAVE_V3_ADDRESS_MAP[1])
       getUserAccountDataMock.mockResolvedValue([0, 0, 0, 0, 0, 0])
 
@@ -78,24 +94,33 @@ describe('AaveProtocolEvm', () => {
         data: '0x5a3b74b9000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000000000001',
         value: 0
       }
-      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)      
+      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
       aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(DUMMY_ADDRESS_MAP)
+      getReservesDataMock.mockResolvedValue([[{
+        ...DUMMY_RESERVE_DATA,
+        baseLTVasCollateral: 100
+      }]])
 
       const { hash, fee } = await aaveProtocolEvm.setUseReserveAsCollateral(DUMMY_USDT_ADDRESS, true)
 
       expect(account.sendTransaction).toHaveBeenCalledWith(DUMMY_TX)
+      expect(getReservesDataMock).toHaveBeenCalled()
       expect(hash).toBe(DUMMY_TX_RESULT.hash)
       expect(fee).toBe(DUMMY_TX_RESULT.fee)
     })
 
-    test ('should successfully disable supplied asset to be used as collateral', async () => {
+    test('should successfully disable supplied asset to be used as collateral', async () => {
       const DUMMY_TX = {
         data: '0x5a3b74b9000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000000000000',
         to: DUMMY_POOL_ADDRESS,
         value: 0
       }
-      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)      
+      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
       aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(DUMMY_ADDRESS_MAP)
+      getReservesDataMock.mockResolvedValue([[{
+        ...DUMMY_RESERVE_DATA,
+        baseLTVasCollateral: 100
+      }]])
 
       const { hash, fee } = await aaveProtocolEvm.setUseReserveAsCollateral(DUMMY_USDT_ADDRESS, false)
 
@@ -104,11 +129,32 @@ describe('AaveProtocolEvm', () => {
       expect(fee).toBe(DUMMY_TX_RESULT.fee)
     })
 
-    test ('should throw if token is not a valid EVM address', async () => {
+    test('should throw if token is not a valid EVM address', async () => {
       await expect(aaveProtocolEvm.setUseReserveAsCollateral(
         'invalid-address',
         true
-        )).rejects.toThrow(AAVE_V3_ERROR.INVALID_ADDRESS)
+      )).rejects.toThrow(AAVE_V3_ERROR.INVALID_ADDRESS)
+    })
+
+    test('should throw if token reserve is not found', async () => {
+      getReservesDataMock.mockResolvedValue([[]])
+
+      await expect(aaveProtocolEvm.setUseReserveAsCollateral(
+        DUMMY_USDT_ADDRESS,
+        true
+      )).rejects.toThrow(AAVE_V3_ERROR.CANNOT_FIND_TOKEN_RESERVE)
+    })
+
+    test('should throw if token cannot be used as collateral', async () => {
+      getReservesDataMock.mockResolvedValue([[{
+        ...DUMMY_RESERVE_DATA,
+        baseLTVasCollateral: 0
+      }]])
+
+      await expect(aaveProtocolEvm.setUseReserveAsCollateral(
+        DUMMY_USDT_ADDRESS,
+        true
+      )).rejects.toThrow(AAVE_V3_ERROR.TOKEN_CANNOT_BE_COLLATERAL)
     })
   })
 
@@ -124,6 +170,8 @@ describe('AaveProtocolEvm', () => {
       account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
       account.getTokenBalance = jest.fn().mockResolvedValue(DUMMY_AMOUNT * 2)
       aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(DUMMY_ADDRESS_MAP)
+      getReservesDataMock.mockResolvedValue([[DUMMY_RESERVE_DATA]])
+      scaledTotalSupplyMock.mockResolvedValue(1n)
 
       const { hash, fee } = await aaveProtocolEvm.supply({
         token: DUMMY_USDT_ADDRESS,
@@ -135,7 +183,7 @@ describe('AaveProtocolEvm', () => {
       expect(fee).toBe(DUMMY_TX_RESULT.fee)
     })
 
-    test('should throw if has insufficient fund to supply' , async () => {
+    test('should throw if has insufficient fund to supply', async () => {
       account.getTokenBalance = jest.fn().mockResolvedValue(0)
 
       await expect(aaveProtocolEvm.supply({
@@ -177,6 +225,8 @@ describe('AaveProtocolEvm', () => {
       account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
       account.getTokenBalance = jest.fn().mockResolvedValue(DUMMY_AMOUNT * 2)
       aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(DUMMY_ADDRESS_MAP)
+      getReservesDataMock.mockResolvedValue([[DUMMY_RESERVE_DATA]])
+      scaledTotalSupplyMock.mockResolvedValue(1n)
 
       const { hash, fee } = await aaveProtocolEvm.supply({
         token: DUMMY_USDT_ADDRESS,
@@ -187,6 +237,70 @@ describe('AaveProtocolEvm', () => {
       expect(account.sendTransaction).toHaveBeenLastCalledWith(DUMMY_TX)
       expect(hash).toBe(DUMMY_TX_RESULT.hash)
       expect(fee).toBe(DUMMY_TX_RESULT.fee)
+    })
+
+    test('should throw if supply amount exceed supply cap', async () => {
+      const DUMMY_AMOUNT = 100_000_000
+      account.getTokenBalance = jest.fn().mockResolvedValue(DUMMY_AMOUNT * 2)
+      aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(DUMMY_ADDRESS_MAP)
+      getReservesDataMock.mockResolvedValue([[{
+        ...DUMMY_RESERVE_DATA,
+        supplyCap: 1n,
+      }]])
+      scaledTotalSupplyMock.mockResolvedValue(ethers.MaxInt256)
+
+      await expect(aaveProtocolEvm.supply({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT,
+      })).rejects.toThrow(AAVE_V3_ERROR.SUPPLY_CAP_EXCEEDED)
+    })
+
+    test('should throw if token reserve is paused', async () => {
+      const DUMMY_AMOUNT = 100_000_000
+      account.getTokenBalance = jest.fn().mockResolvedValue(DUMMY_AMOUNT * 2)
+      aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(DUMMY_ADDRESS_MAP)
+      getReservesDataMock.mockResolvedValue([[{
+        ...DUMMY_RESERVE_DATA,
+        isPaused: true
+      }]])
+      scaledTotalSupplyMock.mockResolvedValue(ethers.MaxInt256)
+
+      await expect(aaveProtocolEvm.supply({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT,
+      })).rejects.toThrow(AAVE_V3_ERROR.RESERVE_PAUSED)
+    })
+
+    test('should throw if token reserve is frozen', async () => {
+      const DUMMY_AMOUNT = 100_000_000
+      account.getTokenBalance = jest.fn().mockResolvedValue(DUMMY_AMOUNT * 2)
+      aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(DUMMY_ADDRESS_MAP)
+      getReservesDataMock.mockResolvedValue([[{
+        ...DUMMY_RESERVE_DATA,
+        isFrozen: true
+      }]])
+      scaledTotalSupplyMock.mockResolvedValue(ethers.MaxInt256)
+
+      await expect(aaveProtocolEvm.supply({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT,
+      })).rejects.toThrow(AAVE_V3_ERROR.RESERVE_FROZEN)
+    })
+
+    test('should throw if token reserve is inactive', async () => {
+      const DUMMY_AMOUNT = 100_000_000
+      account.getTokenBalance = jest.fn().mockResolvedValue(DUMMY_AMOUNT * 2)
+      aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(DUMMY_ADDRESS_MAP)
+      getReservesDataMock.mockResolvedValue([[{
+        ...DUMMY_RESERVE_DATA,
+        isActive: false
+      }]])
+      scaledTotalSupplyMock.mockResolvedValue(ethers.MaxInt256)
+
+      await expect(aaveProtocolEvm.supply({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT,
+      })).rejects.toThrow(AAVE_V3_ERROR.RESERVE_INACTIVE)
     })
   })
 
@@ -242,8 +356,10 @@ describe('AaveProtocolEvm', () => {
         gasLimit: 300000,
       }
       account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
-      account.getTokenBalance = jest.fn().mockResolvedValue(DUMMY_AMOUNT * 2)
       aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(DUMMY_ADDRESS_MAP)
+      getReservesDataMock.mockResolvedValue([[DUMMY_RESERVE_DATA]])
+      scaledBalanceOfMock.mockResolvedValue(ethers.MaxInt256)
+      getUserAccountDataMock.mockResolvedValue([0, 0, 0, 0, HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT, Infinity])
 
       const { hash, fee } = await aaveProtocolEvm.withdraw({
         token: DUMMY_USDT_ADDRESS,
@@ -385,14 +501,14 @@ describe('AaveProtocolEvm', () => {
 
     test('should throw if amount is equal to or less than 0', async () => {
       await expect(aaveProtocolEvm.borrow({
-        token: DUMMY_BNB_ADDRESS,
+        token: DUMMY_USDT_ADDRESS,
         amount: 0
       })).rejects.toThrow(AAVE_V3_ERROR.INVALID_AMOUNT)
     })
 
     test('should throw if onBehalfAddress is not a valid EVM address', async () => {
       await expect(aaveProtocolEvm.borrow({
-        token: DUMMY_BNB_ADDRESS,
+        token: DUMMY_USDT_ADDRESS,
         amount: 1_000_000,
         onBehalfOf: 'invalid-address'
       })).rejects.toThrow(AAVE_V3_ERROR.INVALID_ADDRESS)
@@ -431,14 +547,14 @@ describe('AaveProtocolEvm', () => {
     test('should successfully quote a borrow transaction', async () => {
       account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 0 })
       const DUMMY_TX = {
-        data: '0xa415bcad000000000000000000000000b8c77482e45f1f44de1745f52c74426c631bdd5200000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d0',
+        data: '0xa415bcad000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec700000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d0',
         to: DUMMY_POOL_ADDRESS,
         value: 0,
         gasLimit: 300000
       }
 
       const { fee } = await aaveProtocolEvm.quoteBorrow({
-        token: DUMMY_BNB_ADDRESS,
+        token: DUMMY_USDT_ADDRESS,
         amount: 1_000_000
       })
 
@@ -455,14 +571,14 @@ describe('AaveProtocolEvm', () => {
 
     test('should throw if amount is equal to or less than 0', async () => {
       await expect(aaveProtocolEvm.quoteBorrow({
-        token: DUMMY_BNB_ADDRESS,
+        token: DUMMY_USDT_ADDRESS,
         amount: 0
       })).rejects.toThrow(AAVE_V3_ERROR.INVALID_AMOUNT)
     })
 
     test('should throw if onBehalfAddress is not a valid EVM address', async () => {
       await expect(aaveProtocolEvm.quoteBorrow({
-        token: DUMMY_BNB_ADDRESS,
+        token: DUMMY_USDT_ADDRESS,
         amount: 1_000_000,
         onBehalfOf: 'invalid-address'
       })).rejects.toThrow(AAVE_V3_ERROR.INVALID_ADDRESS)
@@ -471,10 +587,9 @@ describe('AaveProtocolEvm', () => {
 
   describe('repay', () => {
     test('should successfully repay for a debt position', async () => {
-      const DUMMY_AMOUNT =  10_000_000
+      const DUMMY_AMOUNT = 10_000_000
       const DUMMY_TX = {
         data: '0x573ade81000000000000000000000000b8c77482e45f1f44de1745f52c74426c631bdd5200000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000002000000000000000000000000d073a82edfc66f8627038894b486cfe94153fe28',
-        from: DUMMY_EMPTY_ACCOUNT,
         to: DUMMY_POOL_ADDRESS,
         value: 0,
         gasLimit: 300000
@@ -490,10 +605,9 @@ describe('AaveProtocolEvm', () => {
     })
 
     test('should throw error when there is no debt position', async () => {
-      const DUMMY_AMOUNT =  10_000_000
+      const DUMMY_AMOUNT = 10_000_000
       const DUMMY_TX = {
         data: '0x573ade81000000000000000000000000b8c77482e45f1f44de1745f52c74426c631bdd5200000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000002000000000000000000000000d073a82edfc66f8627038894b486cfe94153fe28',
-        from: DUMMY_EMPTY_ACCOUNT,
         to: DUMMY_POOL_ADDRESS,
         value: 0,
         gasLimit: 300000
@@ -519,14 +633,14 @@ describe('AaveProtocolEvm', () => {
 
     test('should throw if amount is equal to or less than 0', async () => {
       await expect(aaveProtocolEvm.repay({
-        token: DUMMY_BNB_ADDRESS,
+        token: DUMMY_USDT_ADDRESS,
         amount: 0
       })).rejects.toThrow(AAVE_V3_ERROR.INVALID_AMOUNT)
     })
 
     test('should throw if onBehalfAddress is not a valid EVM address', async () => {
       await expect(aaveProtocolEvm.repay({
-        token: DUMMY_BNB_ADDRESS,
+        token: DUMMY_USDT_ADDRESS,
         amount: 1_000_000,
         onBehalfOf: 'invalid-address'
       })).rejects.toThrow(AAVE_V3_ERROR.INVALID_ADDRESS)
@@ -561,14 +675,14 @@ describe('AaveProtocolEvm', () => {
 
     test('should throw if amount is equal to or less than 0', async () => {
       await expect(aaveProtocolEvm.quoteRepay({
-        token: DUMMY_BNB_ADDRESS,
+        token: DUMMY_USDT_ADDRESS,
         amount: 0
       })).rejects.toThrow(AAVE_V3_ERROR.INVALID_AMOUNT)
     })
 
     test('should throw if onBehalfAddress is not a valid EVM address', async () => {
       await expect(aaveProtocolEvm.quoteRepay({
-        token: DUMMY_BNB_ADDRESS,
+        token: DUMMY_USDT_ADDRESS,
         amount: 1_000_000,
         onBehalfOf: 'invalid-address'
       })).rejects.toThrow(AAVE_V3_ERROR.INVALID_ADDRESS)
