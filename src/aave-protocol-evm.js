@@ -713,7 +713,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const addressMap = await this._getAddressMap()
 
-    const approveTx = this._getApproveTransaction(options.token, addressMap.pool, options.amount)
+    const approveTx = this._getApproveTransaction(options.token, addressMap.pool, options.amount === Infinity ? MaxInt256 : options.amount)
     const repayTx = await this._getRepayTransaction(options)
 
     if (this._account instanceof WalletAccountEvmErc4337) {

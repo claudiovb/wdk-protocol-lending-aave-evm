@@ -34,6 +34,7 @@ const getUserAccountDataMock = jest.fn()
 const getReservesDataMock = jest.fn()
 const scaledTotalSupplyMock = jest.fn()
 const scaledBalanceOfMock = jest.fn()
+const getAssetPriceMock = jest.fn()
 
 jest.unstable_mockModule('ethers', async () => {
   const originalEthers = await jest.requireActual('ethers')
@@ -43,6 +44,7 @@ jest.unstable_mockModule('ethers', async () => {
     getReservesData = getReservesDataMock
     scaledTotalSupply = scaledTotalSupplyMock
     scaledBalanceOf = scaledBalanceOfMock
+    getAssetPrice = getAssetPriceMock
   }
 
   return {
@@ -58,6 +60,7 @@ describe('AaveProtocolEvm', () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
+
     account = new WalletAccountEvm(SEED_PHRASE, "0'/0/0", {
       provider: DUMMY_PROVIDER
     })
@@ -341,7 +344,8 @@ describe('AaveProtocolEvm', () => {
 
   describe('quoteSupply', () => {
     test('should successfully quote a supply transaction', async () => {
-      account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 0 })
+      account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 1 })
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
       const DUMMY_TX = {
         data: '0x617ba037000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000000989680000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d00000000000000000000000000000000000000000000000000000000000000000',
         to: DUMMY_POOL_ADDRESS,
@@ -355,7 +359,8 @@ describe('AaveProtocolEvm', () => {
       })
 
       expect(account.quoteSendTransaction).toHaveBeenLastCalledWith(DUMMY_TX)
-      expect(fee).toBe(0)
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+      expect(fee).toBe(2)
     })
 
     test('should throw if token address is not a valid EVM address', async () => {
@@ -382,20 +387,28 @@ describe('AaveProtocolEvm', () => {
   })
 
   describe('withdraw', () => {
-    test('should successfully withdraw asset from the reserve when not using asset as collateral', async () => {
+    test('should successfully withdraw asset from the reserve', async () => {
       const DUMMY_AMOUNT = 10_000_000
       const DUMMY_TX = {
-        data: '0x69328dec000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000000989680000000000000000000000000d073a82edfc66f8627038894b486cfe94153fe28',
+        data: '0x69328dec000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000000989680000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d0',
         to: DUMMY_POOL_ADDRESS,
         value: 0,
-        gasLimit: 300000,
+        gasLimit: 300000
       }
       account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
-      aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(DUMMY_ADDRESS_MAP)
-      getReservesDataMock.mockResolvedValue([[DUMMY_RESERVE_DATA]])
-      // scaledBalanceOfMock.mockResolvedValue(ethers.MaxInt256)
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isFrozen: false,
+        isActive: true,
+        aTokenAddress: DUMMY_USDT_ADDRESS,
+        accruedToTreasury: 1n,
+        liquidityIndex: 1n,
+        decimals: 0n
+      }]])
+      scaledBalanceOfMock.mockResolvedValue(9999999999999999999999999999999999999n)
       getUserAccountDataMock.mockResolvedValue([0, 0, 0, 0, 1e18, Infinity])
-
 
       const { hash, fee } = await aaveProtocolEvm.withdraw({
         token: DUMMY_USDT_ADDRESS,
@@ -403,8 +416,9 @@ describe('AaveProtocolEvm', () => {
       })
 
       expect(account.sendTransaction).toHaveBeenCalledWith(DUMMY_TX)
+      expect(scaledBalanceOfMock).toHaveBeenCalled()
       expect(hash).toBe(DUMMY_TX_RESULT.hash)
-      expect(fee).toBe(DUMMY_TX_RESULT.hash)
+      expect(fee).toBe(DUMMY_TX_RESULT.fee)
     })
 
     test('should successfully withdraw asset when health factor after withdrawal is greater than 1', () => {
@@ -446,8 +460,19 @@ describe('AaveProtocolEvm', () => {
         gasLimit: 300000
       }
       account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
-      account.getTokenBalance = jest.fn().mockResolvedValue(DUMMY_AMOUNT * 2)
-      aaveProtocolEvm._getAddressMap = jest.fn().mockResolvedValue(DUMMY_ADDRESS_MAP)
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isFrozen: false,
+        isActive: true,
+        aTokenAddress: DUMMY_USDT_ADDRESS,
+        accruedToTreasury: 1n,
+        liquidityIndex: 1n,
+        decimals: 0n
+      }]])
+      scaledBalanceOfMock.mockResolvedValue(9999999999999999999999999999999999999n)
+      getUserAccountDataMock.mockResolvedValue([0, 0, 0, 0, 1e18, Infinity])
 
       const { hash, fee } = await aaveProtocolEvm.withdraw({
         token: DUMMY_USDT_ADDRESS,
@@ -456,14 +481,18 @@ describe('AaveProtocolEvm', () => {
       })
 
       expect(account.sendTransaction).toHaveBeenCalledWith(DUMMY_TX)
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(scaledBalanceOfMock).toHaveBeenCalled()
+      expect(getUserAccountDataMock).toHaveBeenCalled()
       expect(hash).toBe(DUMMY_TX_RESULT.hash)
-      expect(fee).toBe(DUMMY_TX_RESULT.hash)
+      expect(fee).toBe(DUMMY_TX_RESULT.fee)
     })
   })
 
   describe('quoteWithdraw', () => {
     test('should successfully quote withdraw transaction', async () => {
       account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 0 })
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
       const DUMMY_TX = {
         data: '0x69328dec000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000000989680000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d0',
         to: DUMMY_POOL_ADDRESS,
@@ -477,6 +506,7 @@ describe('AaveProtocolEvm', () => {
       })
 
       expect(account.quoteSendTransaction).toHaveBeenCalledWith(DUMMY_TX)
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
       expect(fee).toBe(0)
     })
 
@@ -507,12 +537,27 @@ describe('AaveProtocolEvm', () => {
     test('with sufficient collateral, should successfully borrow asset', async () => {
       const DUMMY_AMOUNT = 10_000_000
       const DUMMY_TX = {
-        data: '0xa415bcad000000000000000000000000b8c77482e45f1f44de1745f52c74426c631bdd5200000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d0',
+        data: '0xa415bcad000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000000000000000000000000000000000000098968000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d0',
         to: DUMMY_POOL_ADDRESS,
         value: 0,
         gasLimit: 300000
       }
       account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getAssetPriceMock.mockResolvedValue(1n)
+      getUserAccountDataMock.mockResolvedValue([999999999, 999999999, 0, 0, 1e18, Infinity])
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isFrozen: false,
+        isActive: true,
+        borrowingEnabled: true,
+        aTokenAddress: DUMMY_USDT_ADDRESS,
+        variableBorrowIndex: 1n,
+        totalScaledVariableDebt: 1n,
+        borrowCap: 999999999999999999n,
+        decimals: 0n
+      }]])
 
       const { hash, fee } = await aaveProtocolEvm.borrow({
         token: DUMMY_USDT_ADDRESS,
@@ -520,12 +565,41 @@ describe('AaveProtocolEvm', () => {
       })
 
       expect(account.sendTransaction).toHaveBeenCalledWith(DUMMY_TX)
+      expect(getUserAccountDataMock).toHaveBeenCalled()
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
       expect(hash).toBe(DUMMY_TX_RESULT.hash)
       expect(fee).toBe(DUMMY_TX_RESULT.fee)
     })
 
-    test('with insufficient collateral, should throw when borrow asset', () => {
+    test('with insufficient collateral, should throw when borrow asset', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getAssetPriceMock.mockResolvedValue(1n)
+      getUserAccountDataMock.mockResolvedValue([9, 999999999999999, 0, 0, 1e18, Infinity])
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isFrozen: false,
+        isActive: true,
+        borrowingEnabled: true,
+        aTokenAddress: DUMMY_USDT_ADDRESS,
+        variableBorrowIndex: 1n,
+        totalScaledVariableDebt: 1n,
+        borrowCap: 999999999999999999n,
+        decimals: 0n
+      }]])
 
+      await expect(aaveProtocolEvm.borrow({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.INSUFFICIENT_COLLATERAL)
+
+      expect(getUserAccountDataMock).toHaveBeenCalled()
+      expect(getAssetPriceMock).toHaveBeenCalled()
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
     })
 
     test('should throw if token address is not a valid EVM address', async () => {
@@ -553,11 +627,27 @@ describe('AaveProtocolEvm', () => {
     test('on behalf of an address with sufficient collateral, should successfully borrow asset', async () => {
       const DUMMY_AMOUNT = 10_000_000
       const DUMMY_TX = {
-        data: '0xa415bcad000000000000000000000000b8c77482e45f1f44de1745f52c74426c631bdd5200000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d0',
+        data: '0xa415bcad000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000000000000000000000000000000000000098968000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0ffee254729296a45a3885639ac7e10f9d54979',
         to: DUMMY_POOL_ADDRESS,
         value: 0,
         gasLimit: 300000
       }
+      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getAssetPriceMock.mockResolvedValue(1n)
+      getUserAccountDataMock.mockResolvedValue([999999999, 999999999, 0, 0, 1e18, Infinity])
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isFrozen: false,
+        isActive: true,
+        borrowingEnabled: true,
+        aTokenAddress: DUMMY_USDT_ADDRESS,
+        variableBorrowIndex: 1n,
+        totalScaledVariableDebt: 1n,
+        borrowCap: 999999999999999999n,
+        decimals: 0n
+      }]])
 
       const { hash, fee } = await aaveProtocolEvm.borrow({
         token: DUMMY_USDT_ADDRESS,
@@ -566,22 +656,19 @@ describe('AaveProtocolEvm', () => {
       })
 
       expect(account.sendTransaction).toHaveBeenLastCalledWith(DUMMY_TX)
+      expect(getUserAccountDataMock).toHaveBeenCalled()
+      expect(getAssetPriceMock).toHaveBeenCalled()
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
       expect(hash).toBe(DUMMY_TX_RESULT.hash)
       expect(fee).toBe(DUMMY_TX_RESULT.fee)
-    })
-
-    test('on behalf of an address with insufficient collateral, should throw when borrow asset', () => {
-
-    })
-
-    test('given insufficient credit allowance on behalf of an address, should throw when borrow asset', () => {
-
     })
   })
 
   describe('quoteBorrow', () => {
     test('should successfully quote a borrow transaction', async () => {
       account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 0 })
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
       const DUMMY_TX = {
         data: '0xa415bcad000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec700000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d0',
         to: DUMMY_POOL_ADDRESS,
@@ -595,6 +682,7 @@ describe('AaveProtocolEvm', () => {
       })
 
       expect(account.quoteSendTransaction).toHaveBeenCalledWith(DUMMY_TX)
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
       expect(fee).toBe(0)
     })
 
@@ -625,39 +713,150 @@ describe('AaveProtocolEvm', () => {
     test('should successfully repay for a debt position', async () => {
       const DUMMY_AMOUNT = 10_000_000
       const DUMMY_TX = {
-        data: '0x573ade81000000000000000000000000b8c77482e45f1f44de1745f52c74426c631bdd5200000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000002000000000000000000000000d073a82edfc66f8627038894b486cfe94153fe28',
+        data: '0x573ade81000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec700000000000000000000000000000000000000000000000000000000009896800000000000000000000000000000000000000000000000000000000000000002000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d0',
         to: DUMMY_POOL_ADDRESS,
         value: 0,
         gasLimit: 300000
       }
       account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
-
-      await aaveProtocolEvm.repay({
-        token: DUMMY_USDT_ADDRESS,
-        amount: DUMMY_AMOUNT
-      })
-
-      expect(aaveProtocolEvm._account.sendTransaction).toHaveBeenLastCalledWith(DUMMY_TX)
-    })
-
-    test('should throw error when there is no debt position', async () => {
-      const DUMMY_AMOUNT = 10_000_000
-      const DUMMY_TX = {
-        data: '0x573ade81000000000000000000000000b8c77482e45f1f44de1745f52c74426c631bdd5200000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000002000000000000000000000000d073a82edfc66f8627038894b486cfe94153fe28',
-        to: DUMMY_POOL_ADDRESS,
-        value: 0,
-        gasLimit: 300000
-      }
-      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      scaledBalanceOfMock.mockResolvedValue(99n ** 18n)
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        variableDebtTokenAddress: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isActive: true,
+        variableBorrowIndex: 1n ** 18n
+      }]])
 
       const { hash, fee } = await aaveProtocolEvm.repay({
         token: DUMMY_USDT_ADDRESS,
         amount: DUMMY_AMOUNT
       })
 
-      expect(account.sendTransaction).toHaveBeenLastCalledWith(DUMMY_TX)
+      expect(aaveProtocolEvm._account.sendTransaction).toHaveBeenLastCalledWith(DUMMY_TX)
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+      expect(scaledBalanceOfMock).toHaveBeenCalled()
+      expect(getReservesDataMock).toHaveBeenCalled()
       expect(hash).toBe(DUMMY_TX_RESULT.hash)
       expect(fee).toBe(DUMMY_TX_RESULT.fee)
+    })
+
+    test('should successfully repay in full for a debt position', async () => {
+      const DUMMY_TX = {
+        data: '0x573ade81000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec77fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d0',
+        to: DUMMY_POOL_ADDRESS,
+        value: 0,
+        gasLimit: 300000
+      }
+      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      scaledBalanceOfMock.mockResolvedValue(99n ** 18n)
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        variableDebtTokenAddress: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isActive: true,
+        variableBorrowIndex: 1n ** 18n
+      }]])
+
+      const { hash, fee } = await aaveProtocolEvm.repay({
+        token: DUMMY_USDT_ADDRESS,
+        amount: Infinity
+      })
+
+      expect(aaveProtocolEvm._account.sendTransaction).toHaveBeenLastCalledWith(DUMMY_TX)
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+      expect(scaledBalanceOfMock).toHaveBeenCalled()
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(hash).toBe(DUMMY_TX_RESULT.hash)
+      expect(fee).toBe(DUMMY_TX_RESULT.fee)
+    })
+
+    test('on behalf of an address, should successfully repay for a debt position', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      const DUMMY_TX = {
+        data: '0x573ade81000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec700000000000000000000000000000000000000000000000000000000009896800000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c0ffee254729296a45a3885639ac7e10f9d54979',
+        to: DUMMY_POOL_ADDRESS,
+        value: 0,
+        gasLimit: 300000
+      }
+      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      scaledBalanceOfMock.mockResolvedValue(99n ** 18n)
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        variableDebtTokenAddress: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isActive: true,
+        variableBorrowIndex: 1n ** 18n
+      }]])
+
+      const { hash, fee } = await aaveProtocolEvm.repay({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT,
+        onBehalfOf: DUMMY_ON_BEHALF_OF_ACCOUNT
+      })
+
+      expect(aaveProtocolEvm._account.sendTransaction).toHaveBeenLastCalledWith(DUMMY_TX)
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+      expect(scaledBalanceOfMock).toHaveBeenCalled()
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(hash).toBe(DUMMY_TX_RESULT.hash)
+      expect(fee).toBe(DUMMY_TX_RESULT.fee)
+    })
+
+    test('on behalf of an address, should successfully repay in full for a debt position', async () => {
+      const DUMMY_TX = {
+        data: '0x573ade81000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000031bdabc50000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c0ffee254729296a45a3885639ac7e10f9d54979',
+        to: DUMMY_POOL_ADDRESS,
+        value: 0,
+        gasLimit: 300000
+      }
+      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      scaledBalanceOfMock.mockResolvedValue(99n ** 18n)
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        variableDebtTokenAddress: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isActive: true,
+        variableBorrowIndex: 1n ** 18n
+      }]])
+
+      const { hash, fee } = await aaveProtocolEvm.repay({
+        token: DUMMY_USDT_ADDRESS,
+        amount: Infinity,
+        onBehalfOf: DUMMY_ON_BEHALF_OF_ACCOUNT
+      })
+
+      expect(aaveProtocolEvm._account.sendTransaction).toHaveBeenLastCalledWith(DUMMY_TX)
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+      expect(scaledBalanceOfMock).toHaveBeenCalled()
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(hash).toBe(DUMMY_TX_RESULT.hash)
+      expect(fee).toBe(DUMMY_TX_RESULT.fee)
+    })
+
+    test('should throw error when there is no debt position', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      scaledBalanceOfMock.mockResolvedValue(0n)
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        variableDebtTokenAddress: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isActive: true,
+        variableBorrowIndex: 1n ** 18n
+      }]])
+
+      await expect(aaveProtocolEvm.repay({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.DEBT_NOT_FOUND)
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+      expect(scaledBalanceOfMock).toHaveBeenCalled()
+      expect(getReservesDataMock).toHaveBeenCalled()
     })
 
     test('should throw if token address is not a valid EVM address', async () => {
@@ -686,6 +885,7 @@ describe('AaveProtocolEvm', () => {
   describe('quoteRepay', () => {
     test('should successfully quote a repay transaction', async () => {
       account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 0 })
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
       const DUMMY_TX = {
         data: '0x573ade81000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec700000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000002000000000000000000000000405005c7c4422390f4b334f64cf20e0b767131d0',
         to: DUMMY_POOL_ADDRESS,
@@ -699,6 +899,7 @@ describe('AaveProtocolEvm', () => {
       })
 
       expect(account.quoteSendTransaction).toHaveBeenLastCalledWith(DUMMY_TX)
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
       expect(fee).toBe(0)
     })
 
