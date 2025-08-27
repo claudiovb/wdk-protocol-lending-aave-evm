@@ -158,7 +158,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
   }
 
   async _getTokenReserveData(token) {
-    const uiPoolDataProviderContract = await this._getUiPoolDataProviderContract();
+    const uiPoolDataProviderContract = await this._getUiPoolDataProviderContract()
     const addressMap = await this._getAddressMap()
 
     const [reserves] = await uiPoolDataProviderContract.getReservesData(addressMap.poolAddressesProvider)
