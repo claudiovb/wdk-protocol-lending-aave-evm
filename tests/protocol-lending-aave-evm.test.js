@@ -73,6 +73,10 @@ describe('AaveProtocolEvm', () => {
       })
     })
 
+    test('should throw if address is invalid', async () => {
+      await expect(aaveProtocolEvm.getAccountData('invalid-address')).rejects.toThrow(AAVE_V3_ERROR.INVALID_ADDRESS)
+    })
+
     test('should throw error when chain is not supported', async () => {
       account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: -99 })
 
@@ -1101,6 +1105,38 @@ describe('AaveProtocolEvm', () => {
       expect(fee).toBe(DUMMY_TX_RESULT.fee)
     })
 
+    test('should throw if token reserve is paused', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: true
+      }]])
+
+      await expect(aaveProtocolEvm.repay({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.RESERVE_PAUSED) 
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if token reserve is inactive', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isActive: false
+      }]])
+
+      await expect(aaveProtocolEvm.repay({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.RESERVE_INACTIVE) 
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
     test('should throw error when there is no debt position', async () => {
       const DUMMY_AMOUNT = 10_000_000
       account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
@@ -1186,6 +1222,23 @@ describe('AaveProtocolEvm', () => {
         amount: 1_000_000,
         onBehalfOf: 'invalid-address'
       })).rejects.toThrow(AAVE_V3_ERROR.INVALID_ADDRESS)
+    })
+  })
+
+  describe('setUserEMode', () => {
+    test('should successfully set user e-mode', async () => {
+      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+
+      const { hash, fee } = await aaveProtocolEvm.setUserEMode(1)
+
+      expect(account.sendTransaction).toBeCalled()
+      expect(hash).toBe(DUMMY_TX_RESULT.hash)
+      expect(fee).toBe(DUMMY_TX_RESULT.fee)
+    })
+
+    test('should throw if catergory id is not valid', async () => {
+      await expect(aaveProtocolEvm.setUserEMode(-1)).rejects.toThrow(AAVE_V3_ERROR.INVALID_CATEGORY_ID)
     })
   })
 })
