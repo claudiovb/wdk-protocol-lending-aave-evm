@@ -1,3 +1,4 @@
+export const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT: 1000000000000000000;
 export default class AaveProtocolEvm extends LendingProtocol {
     /**
      * Creates a read-only handler for Aave Protocol on any EVM chain.
@@ -14,17 +15,21 @@ export default class AaveProtocolEvm extends LendingProtocol {
      */
     constructor(account: WalletAccountEvm | WalletAccountEvmErc4337);
     /**
+     * @private
+     */
+    private _getAccountProvider;
+    /**
      * The address mapping by chain of Aave Protocol's contracts
      *
      * @private
-     * @returns {Record<string, string>}
+     * @returns {Promise<Record<string, string>>}
      */
     private _getAddressMap;
     _addressMap: any;
     /** The main contract to interact with Aave Protocol.
      *
      * @private
-     * @returns {Contract}
+     * @returns {Promise<Contract>}
      */
     private _getPoolContract;
     _poolContract: Contract;
@@ -32,7 +37,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
      * The contract to query protocol and user's information.
      *
      * @private
-     * @returns {Contract}
+     * @returns {Promise<Contract>}
      */
     private _getUiPoolDataProviderContract;
     _uiPoolDataProviderContract: Contract;
@@ -43,7 +48,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
      * @param {string} token - The token to request spending approval.
      * @param {string} spender - The address that spends token.
      * @param {number} amount - Amount of spending to be approved.
-     * @returns {EvmTransaction} Returns the EVM transaction.
+     * @returns {Promise<EvmTransaction>} Returns the EVM transaction.
      */
     private _getApproveTransaction;
     _getTokenReserveData(token: any): Promise<any>;
@@ -77,12 +82,12 @@ export default class AaveProtocolEvm extends LendingProtocol {
     private _validateRepay;
     /**
      *
-     * @private
+     * @TOKEN_CANNOT_BE_COLLATERAL
      * @param {string} token
      * @param {boolean} useAsCollateral
      * @returns {Promise<void>}
      */
-    private _validateUseReserveAsCollateral;
+    _validateUseReserveAsCollateral(token: string, useAsCollateral: boolean): Promise<void>;
     /**
      * Returns a transaction to supply a specific token amount to the lending pool.
      *
@@ -254,3 +259,7 @@ export type SetUserEModeResult = {
 };
 import { LendingProtocol } from '@wdk/wallet/protocols';
 import { Contract } from 'ethers';
+import { WalletAccountReadOnlyEvm } from '@wdk/wdk-wallet-evm';
+import { WalletAccountReadOnlyEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337';
+import { WalletAccountEvm } from '@wdk/wdk-wallet-evm';
+import { WalletAccountEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337';
