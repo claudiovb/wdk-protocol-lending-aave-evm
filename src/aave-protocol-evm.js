@@ -15,8 +15,8 @@
 'use strict'
 
 import { LendingProtocol } from '@wdk/wallet/protocols'
-import { WalletAccountEvm } from '@wdk/wdk-wallet-evm'
-import { WalletAccountEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337'
+import { WalletAccountEvm, WalletAccountReadOnlyEvm } from '@wdk/wdk-wallet-evm'
+import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337'
 
 import { IAaveOracle_ABI, IAToken_ABI, IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 import { Contract, isAddress, MaxInt256, ZeroAddress } from 'ethers'
@@ -89,6 +89,24 @@ export default class AaveProtocolEvm extends LendingProtocol {
   }
 
   /**
+   * @private
+   */
+  async _getAccountProvider() {
+    if (this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountReadOnlyEvm) {
+      return this._account._account.provider
+    }
+
+    if (this._account instanceof WalletAccountEvmErc4337) {
+      return this._account._ownerAccount._provider
+    }
+
+    if (this._account instanceof WalletAccountReadOnlyEvmErc4337) {
+      const evmReadonlyAccount = await this._account._getEvmReadOnlyAccount()
+      return evmReadonlyAccount._provider
+    }
+  }
+
+  /**
    * The address mapping by chain of Aave Protocol's contracts
    *
    * @private
@@ -96,8 +114,8 @@ export default class AaveProtocolEvm extends LendingProtocol {
    */
   async _getAddressMap() {
     if (!this._addressMap) {
-      const network = await this._account._account.provider.getNetwork()
-      const chainId = network.chainId
+      const provider = await this._getAccountProvider()
+      const { chainId } = await provider.getNetwork()
 
       if (!AAVE_V3_ADDRESS_MAP[chainId]) {
         throw new Error(AAVE_V3_ERROR.CHAIN_NOT_SUPPORTED)
@@ -117,7 +135,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
   async _getPoolContract() {
     if (!this._poolContract) {
       const addressMap = await this._getAddressMap()
-      this._poolContract = new Contract(addressMap.pool, IPool_ABI, this._account._account.provider)
+      this._poolContract = new Contract(addressMap.pool, IPool_ABI, await this._getAccountProvider())
     }
 
     return this._poolContract
@@ -132,7 +150,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
   async _getUiPoolDataProviderContract() {
     if (!this._uiPoolDataProviderContract) {
       const addressMap = await this._getAddressMap()
-      this._uiPoolDataProviderContract = new Contract(addressMap.uiPoolDataProvider, UiPoolDataProviderAbi, this._account._account.provider)
+      this._uiPoolDataProviderContract = new Contract(addressMap.uiPoolDataProvider, UiPoolDataProviderAbi, await this._getAccountProvider())
     }
 
     return this._uiPoolDataProviderContract
@@ -145,10 +163,10 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * @param {string} token - The token to request spending approval.
    * @param {string} spender - The address that spends token.
    * @param {number} amount - Amount of spending to be approved.
-   * @returns {EvmTransaction} Returns the EVM transaction.
+   * @returns {Promise<EvmTransaction>} Returns the EVM transaction.
    */
-  _getApproveTransaction(token, spender, amount) {
-    const tokenContract = new Contract(token, IERC20_ABI, this._account._account.provider)
+  async _getApproveTransaction(token, spender, amount) {
+    const tokenContract = new Contract(token, IERC20_ABI, await this._getAccountProvider())
 
     return {
       data: tokenContract.interface.encodeFunctionData('approve', [spender, amount]),
@@ -199,7 +217,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error(AAVE_V3_ERROR.RESERVE_INACTIVE)
     }
 
-    const aTokenContract = new Contract(tokenReserve.aTokenAddress, IAToken_ABI, this._account._account.provider)
+    const aTokenContract = new Contract(tokenReserve.aTokenAddress, IAToken_ABI, await this._getAccountProvider())
     const aTokenScaledSupply = await aTokenContract.scaledTotalSupply()
 
     const totalSupplyAfterDeposit = rayMul(aTokenScaledSupply + tokenReserve.accruedToTreasury, tokenReserve.liquidityIndex + BigInt(options.amount))
@@ -231,7 +249,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error(AAVE_V3_ERROR.RESERVE_INACTIVE)
     }
 
-    const aTokenContract = new Contract(tokenReserve.aTokenAddress, IAToken_ABI, this._account._account.provider)
+    const aTokenContract = new Contract(tokenReserve.aTokenAddress, IAToken_ABI, await this._getAccountProvider())
     const userScaledBalance = await aTokenContract.scaledBalanceOf(address)
     const userBalance = rayMul(userScaledBalance, tokenReserve.liquidityIndex)
 
@@ -298,7 +316,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error(AAVE_V3_ERROR.BORROW_CAP_EXCEEDED)
     }
 
-    const priceOracleContract = new Contract(addressMap.priceOracle, IAaveOracle_ABI, this._account._account.provider)
+    const priceOracleContract = new Contract(addressMap.priceOracle, IAaveOracle_ABI, await this._getAccountProvider())
     const tokenPrice = await priceOracleContract.getAssetPrice(options.token)
 
     const amountInBaseCurrency = BigInt(options.amount) * tokenPrice / (10n ** tokenReserve.decimals) // divide by decimals first might lead to zero
@@ -311,7 +329,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
   async _getUserDebtByToken(tokenReserve, address) {
     // VariableDebtToken contract inherits the same class as AToken, we only need a few overlapping methods
-    const variableDebtTokenContract = new Contract(tokenReserve.variableDebtTokenAddress, IAToken_ABI, this._account._account.provider)
+    const variableDebtTokenContract = new Contract(tokenReserve.variableDebtTokenAddress, IAToken_ABI, await this._getAccountProvider())
     const userScaledBalance = await variableDebtTokenContract.scaledBalanceOf(address)
 
     return rayMul(userScaledBalance, tokenReserve.variableBorrowIndex)
@@ -502,7 +520,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const addressMap = await this._getAddressMap()
 
-    const approveTx = this._getApproveTransaction(options.token, addressMap.pool, options.amount)
+    const approveTx = await this._getApproveTransaction(options.token, addressMap.pool, options.amount)
     const supplyTx = await this._getSupplyTransaction(options)
 
     if (this._account instanceof WalletAccountEvmErc4337) {
@@ -540,7 +558,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const addressMap = await this._getAddressMap()
 
-    const approveTx = this._getApproveTransaction(options.token, addressMap.pool, options.amount)
+    const approveTx = await this._getApproveTransaction(options.token, addressMap.pool, options.amount)
     const supplyTx = await this._getSupplyTransaction(options)
 
     if (this._account instanceof WalletAccountEvmErc4337) {
@@ -713,7 +731,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const addressMap = await this._getAddressMap()
 
-    const approveTx = this._getApproveTransaction(options.token, addressMap.pool, options.amount === Infinity ? MaxInt256 : options.amount)
+    const approveTx = await this._getApproveTransaction(options.token, addressMap.pool, options.amount === Infinity ? MaxInt256 : options.amount)
     const repayTx = await this._getRepayTransaction(options)
 
     if (this._account instanceof WalletAccountEvmErc4337) {
@@ -751,7 +769,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const addressMap = await this._getAddressMap()
 
-    const approveTx = this._getApproveTransaction(options.token, addressMap.pool, options.amount)
+    const approveTx = await this._getApproveTransaction(options.token, addressMap.pool, options.amount)
     const repayTx = await this._getRepayTransaction(options)
 
     if (this._account instanceof WalletAccountEvmErc4337) {
