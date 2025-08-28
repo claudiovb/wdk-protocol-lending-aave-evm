@@ -13,18 +13,6 @@ const DUMMY_POOL_ADDRESS = DUMMY_ADDRESS_MAP.pool
 const DUMMY_USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
 const DUMMY_ON_BEHALF_OF_ACCOUNT = '0xc0ffee254729296a45a3885639AC7E10F9d54979'
 
-const DUMMY_RESERVE_DATA = {
-  underlyingAsset: DUMMY_USDT_ADDRESS,
-  isPaused: false,
-  isFrozen: false,
-  isActive: true,
-  aTokenAddress: DUMMY_USDT_ADDRESS,
-  accruedToTreasury: 1n,
-  liquidityIndex: 0n,
-  // supplyCap: ethers.MaxInt256,
-  decimals: 0n
-}
-
 const DUMMY_TX_RESULT = {
   hash: 'dummy-hash',
   fee: 0
@@ -83,6 +71,12 @@ describe('AaveProtocolEvm', () => {
         ltv: 0,
         healthFactor: 0
       })
+    })
+
+    test('should throw error when chain is not supported', async () => {
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: -99 })
+
+      await expect(aaveProtocolEvm.getAccountData()).rejects.toThrow(AAVE_V3_ERROR.CHAIN_NOT_SUPPORTED)
     })
   })
 
@@ -330,7 +324,7 @@ describe('AaveProtocolEvm', () => {
       account.getTokenBalance = jest.fn().mockResolvedValue(DUMMY_AMOUNT * 2)
       account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
       getReservesDataMock.mockResolvedValue([[{
-        ...DUMMY_RESERVE_DATA,
+        underlyingAsset: DUMMY_USDT_ADDRESS,
         isActive: false
       }]])
 
@@ -405,7 +399,8 @@ describe('AaveProtocolEvm', () => {
         aTokenAddress: DUMMY_USDT_ADDRESS,
         accruedToTreasury: 1n,
         liquidityIndex: 1n,
-        decimals: 0n
+        decimals: 0n,
+        baseLTVasCollateral: 1n
       }]])
       scaledBalanceOfMock.mockResolvedValue(9999999999999999999999999999999999999n)
       getUserAccountDataMock.mockResolvedValue([0, 0, 0, 0, 1e18, Infinity])
@@ -421,12 +416,117 @@ describe('AaveProtocolEvm', () => {
       expect(fee).toBe(DUMMY_TX_RESULT.fee)
     })
 
-    test('should successfully withdraw asset when health factor after withdrawal is greater than 1', () => {
+    test('should throw when not enough deposit balance to withdraw', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      scaledBalanceOfMock.mockResolvedValue(1n)
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isFrozen: false,
+        isActive: true,
+        aTokenAddress: DUMMY_USDT_ADDRESS,
+        baseLTVasCollateral: 0n,
+        liquidityIndex: 1n
+      }]])
 
+      await expect(aaveProtocolEvm.withdraw({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.INSUFFICIENT_BALANCE_TO_WITHDRAW) 
     })
 
-    test('should throw if the withdrawal cause health factor to be below 1', () => {
+    test('should throw when health factor too low', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isFrozen: false,
+        isActive: true,
+        aTokenAddress: DUMMY_USDT_ADDRESS,
+        accruedToTreasury: 1n,
+        liquidityIndex: 1n,
+        decimals: 0n
+      }]])
+      scaledBalanceOfMock.mockResolvedValue(9999999999999999999999999999999999999n)
+      getUserAccountDataMock.mockResolvedValue([0, 0, 0, 0, 1e18, 0])
 
+      await expect(aaveProtocolEvm.withdraw({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.HEALTH_FACTOR_TOO_LOW) 
+    })
+
+    test('should throw if ltv is invalid', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isFrozen: false,
+        isActive: true,
+        aTokenAddress: DUMMY_USDT_ADDRESS,
+        accruedToTreasury: 1n,
+        liquidityIndex: 1n,
+        decimals: 0n,
+        baseLTVasCollateral: 0n
+      }]])
+      scaledBalanceOfMock.mockResolvedValue(9999999999999999999999999999999999999n)
+      getUserAccountDataMock.mockResolvedValue([0, 0, 0, 0, 0, Infinity])
+
+      await expect(aaveProtocolEvm.withdraw({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.INVALID_LTV) 
+    })
+
+    test('should throw if token reserve is paused', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: true
+      }]])
+
+      await expect(aaveProtocolEvm.withdraw({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.RESERVE_PAUSED) 
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if token reserve is frozen', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isFrozen: true
+      }]])
+
+      await expect(aaveProtocolEvm.withdraw({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.RESERVE_FROZEN) 
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if token reserve is inactive', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isActive: false
+      }]])
+
+      await expect(aaveProtocolEvm.withdraw({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.RESERVE_INACTIVE) 
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
     })
 
     test('should throw if toAddress is not a valid EVM address', async () => {
@@ -469,7 +569,8 @@ describe('AaveProtocolEvm', () => {
         aTokenAddress: DUMMY_USDT_ADDRESS,
         accruedToTreasury: 1n,
         liquidityIndex: 1n,
-        decimals: 0n
+        decimals: 0n,
+        baseLTVasCollateral: 1n
       }]])
       scaledBalanceOfMock.mockResolvedValue(9999999999999999999999999999999999999n)
       getUserAccountDataMock.mockResolvedValue([0, 0, 0, 0, 1e18, Infinity])
@@ -574,7 +675,6 @@ describe('AaveProtocolEvm', () => {
 
     test('with insufficient collateral, should throw when borrow asset', async () => {
       const DUMMY_AMOUNT = 10_000_000
-      account.sendTransaction = jest.fn().mockResolvedValue(DUMMY_TX_RESULT)
       account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
       getAssetPriceMock.mockResolvedValue(1n)
       getUserAccountDataMock.mockResolvedValue([9, 999999999999999, 0, 0, 1e18, Infinity])
@@ -599,6 +699,169 @@ describe('AaveProtocolEvm', () => {
       expect(getUserAccountDataMock).toHaveBeenCalled()
       expect(getAssetPriceMock).toHaveBeenCalled()
       expect(getReservesDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if ltv is invalid', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getUserAccountDataMock.mockResolvedValue([0, 0, 0, 0, 0, Infinity])
+
+      await expect(aaveProtocolEvm.borrow({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.INVALID_LTV)
+
+      expect(getUserAccountDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if collateral base is equal to 0', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getUserAccountDataMock.mockResolvedValue([0, 0, 0, 0, 999999999999999, 0])
+
+      await expect(aaveProtocolEvm.borrow({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.INSUFFICIENT_COLLATERAL)
+
+      expect(getUserAccountDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if health factor is too low', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getUserAccountDataMock.mockResolvedValue([99999999999, 0, 0, 0, 999999999999999, 0])
+
+      await expect(aaveProtocolEvm.borrow({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.HEALTH_FACTOR_TOO_LOW)
+
+      expect(getUserAccountDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if token reserve is paused', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getUserAccountDataMock.mockResolvedValue([999999999, 999999999, 0, 0, 1e18, Infinity])
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: true
+      }]])
+
+      await expect(aaveProtocolEvm.borrow({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.RESERVE_PAUSED) 
+      expect(getUserAccountDataMock).toHaveBeenCalled()
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if token reserve is frozen', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getUserAccountDataMock.mockResolvedValue([999999999, 999999999, 0, 0, 1e18, Infinity])
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isFrozen: true
+      }]])
+
+      await expect(aaveProtocolEvm.borrow({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.RESERVE_FROZEN) 
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(getUserAccountDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if token reserve is inactive', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getUserAccountDataMock.mockResolvedValue([999999999, 999999999, 0, 0, 1e18, Infinity])
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isActive: false
+      }]])
+
+      await expect(aaveProtocolEvm.borrow({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.RESERVE_INACTIVE) 
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(getUserAccountDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if borrowing is disabled', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getUserAccountDataMock.mockResolvedValue([999999999, 999999999, 0, 0, 1e18, Infinity])
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isFrozen: false,
+        isActive: true,
+        borrowingEnabled: false
+      }]])
+
+      await expect(aaveProtocolEvm.borrow({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.BORROW_DISABLED) 
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(getUserAccountDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if borrowing is disabled', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getUserAccountDataMock.mockResolvedValue([999999999, 999999999, 0, 0, 1e18, Infinity])
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isFrozen: false,
+        isActive: true,
+        borrowingEnabled: false
+      }]])
+
+      await expect(aaveProtocolEvm.borrow({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.BORROW_DISABLED) 
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(getUserAccountDataMock).toHaveBeenCalled()
+      expect(account._account.provider.getNetwork).toHaveBeenCalled()
+    })
+
+    test('should throw if borrow cap is exceeded', async () => {
+      const DUMMY_AMOUNT = 10_000_000
+      account._account.provider.getNetwork = jest.fn().mockResolvedValue({ chainId: DUMMY_CHAIN_ID })
+      getUserAccountDataMock.mockResolvedValue([999999999, 999999999, 0, 0, 1e18, Infinity])
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: DUMMY_USDT_ADDRESS,
+        isPaused: false,
+        isFrozen: false,
+        isActive: true,
+        borrowingEnabled: true,
+        borrowCap: 0n,
+        totalScaledVariableDebt: 1n,
+        variableBorrowIndex: 1n,
+        decimals: 0n
+      }]])
+
+      await expect(aaveProtocolEvm.borrow({
+        token: DUMMY_USDT_ADDRESS,
+        amount: DUMMY_AMOUNT
+      })).rejects.toThrow(AAVE_V3_ERROR.BORROW_CAP_EXCEEDED) 
+      expect(getReservesDataMock).toHaveBeenCalled()
+      expect(getUserAccountDataMock).toHaveBeenCalled()
       expect(account._account.provider.getNetwork).toHaveBeenCalled()
     })
 

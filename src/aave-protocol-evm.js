@@ -245,7 +245,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error(AAVE_V3_ERROR.HEALTH_FACTOR_TOO_LOW)
     }
 
-    if (ltv === 0 || tokenReserve.baseLTVasCollateral === 0) {
+    if (ltv === 0 || BigInt(tokenReserve.baseLTVasCollateral) === 0n) {
       throw new Error(AAVE_V3_ERROR.INVALID_LTV)
     }
   }
@@ -260,7 +260,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const { ltv, healthFactor, totalCollateralBase, totalDebtBase} = await this.getAccountData(options.onBehalfOf)
 
     if (ltv === 0) {
-      throw new Error(AAVE_V3_ERROR.INSUFFICIENT_COLLATERAL)
+      throw new Error(AAVE_V3_ERROR.INVALID_LTV)
     }
 
     if (totalCollateralBase === 0) {
