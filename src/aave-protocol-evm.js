@@ -64,7 +64,7 @@ import { percentDiv } from './math-utils/percentage-math.js'
  */
 
 const DEFAULT_GAS_LIMIT = 300_000
-export const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT = 1e18
+export const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT = 10n ** 18n
 
 function isBigIntInfinity(value) {
   return value === MaxInt256
@@ -104,6 +104,8 @@ export default class AaveProtocolEvm extends LendingProtocol {
       const evmReadonlyAccount = await this._account._getEvmReadOnlyAccount()
       return evmReadonlyAccount._provider
     }
+
+    throw new Error(AAVE_V3_ERROR.CANNOT_FIND_PROVIDER)
   }
 
   /**
@@ -169,7 +171,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const tokenContract = new Contract(token, IERC20_ABI, await this._getAccountProvider())
 
     return {
-      data: tokenContract.interface.encodeFunctionData('approve', [spender, amount]),
+      data: tokenContract.interface.encodeFunctionData('approve', [spender, BigInt(amount)]),
       to: token,
       value: 0
     }
@@ -220,6 +222,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const aTokenContract = new Contract(tokenReserve.aTokenAddress, IAToken_ABI, await this._getAccountProvider())
     const aTokenScaledSupply = await aTokenContract.scaledTotalSupply()
 
+    // todo
     const totalSupplyAfterDeposit = rayMul(aTokenScaledSupply + tokenReserve.accruedToTreasury, tokenReserve.liquidityIndex + BigInt(options.amount))
     const supplyCapInBaseUnit = tokenReserve.supplyCap * (10n ** tokenReserve.decimals)
 
@@ -253,18 +256,9 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const userScaledBalance = await aTokenContract.scaledBalanceOf(address)
     const userBalance = rayMul(userScaledBalance, tokenReserve.liquidityIndex)
 
+    // todo
     if (BigInt(options.amount) > userBalance) {
       throw new Error(AAVE_V3_ERROR.INSUFFICIENT_BALANCE_TO_WITHDRAW)
-    }
-
-    const { ltv, healthFactor } = await this.getAccountData()
-
-    if (healthFactor < HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT) {
-      throw new Error(AAVE_V3_ERROR.HEALTH_FACTOR_TOO_LOW)
-    }
-
-    if (ltv === 0 || BigInt(tokenReserve.baseLTVasCollateral) === 0n) {
-      throw new Error(AAVE_V3_ERROR.INVALID_LTV)
     }
   }
 
@@ -275,22 +269,21 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * @returns {Promise<void>}
    */
   async _validateBorrow(options) {
-    const { ltv, healthFactor, totalCollateralBase, totalDebtBase} = await this.getAccountData(options.onBehalfOf)
+    const { ltv, healthFactor, totalCollateralBase } = await this.getAccountData(options.onBehalfOf)
 
-    if (ltv === 0) {
+    if (BigInt(ltv) === 0n) {
       throw new Error(AAVE_V3_ERROR.INVALID_LTV)
     }
 
-    if (totalCollateralBase === 0) {
+    if (BigInt(totalCollateralBase) === 0n) {
       throw new Error(AAVE_V3_ERROR.INSUFFICIENT_COLLATERAL)
     }
 
-    if (healthFactor < HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT) {
+    if (BigInt(healthFactor) < HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT) {
       throw new Error(AAVE_V3_ERROR.HEALTH_FACTOR_TOO_LOW)
     }
 
     const tokenReserve = await this._getTokenReserveData(options.token)
-    const addressMap = await this._getAddressMap()
 
     if (tokenReserve.isPaused) {
       throw new Error(AAVE_V3_ERROR.RESERVE_PAUSED)
@@ -308,6 +301,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error(AAVE_V3_ERROR.BORROW_DISABLED)
     }
 
+    // todo
     const borrowCapInBaseUnit = tokenReserve.borrowCap * (10n ** tokenReserve.decimals)
     const totalSupplyVariableDebt = rayMul(tokenReserve.totalScaledVariableDebt, tokenReserve.variableBorrowIndex)
     const totalDebtWithAmount = totalSupplyVariableDebt + BigInt(options.amount)
@@ -362,7 +356,6 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
   /**
    *
-   * @TOKEN_CANNOT_BE_COLLATERAL
    * @param {string} token
    * @param {boolean} useAsCollateral
    * @returns {Promise<void>}
@@ -388,7 +381,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const supplyData = poolContract.interface.encodeFunctionData('supply', [
       options.token,
-      options.amount,
+      BigInt(options.amount),
       options.onBehalfOf || address,
       0 // Referral code - currently inactive, 0 means no 3rd party referral
     ])
@@ -414,7 +407,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const withdrawData = poolContract.interface.encodeFunctionData('withdraw', [
       options.token,
-      options.amount === Infinity ? MaxInt256 : options.amount,
+      options.amount === Infinity ? MaxInt256 : BigInt(options.amount),
       options.to || address
     ])
 
@@ -439,7 +432,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const borrowData = poolContract.interface.encodeFunctionData('borrow', [
       options.token,
-      options.amount,
+      BigInt(options.amount),
       2, // interestRateMode - should always be passed a value of 2 (variable rate mode)
       0, // referralCode - currently inactive, 0 means no 3rd party referral
       options.onBehalfOf || address
@@ -464,7 +457,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const address = await this._account.getAddress()
     const poolContract = await this._getPoolContract()
 
-    let amount = options.amount
+    let amount = BigInt(options.amount)
 
     if (options.amount === Infinity) {
       if (options.onBehalfOf) {
@@ -529,6 +522,8 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const { fee: approveFee } = await this._account.sendTransaction(approveTx)
     const { hash, fee } = await this._account.sendTransaction(supplyTx)
+
+    // todo: supply ETH
 
     return {
       fee: fee + approveFee,
@@ -607,6 +602,8 @@ export default class AaveProtocolEvm extends LendingProtocol {
       return await this._account.sendTransaction(withdrawTx, config)
     }
 
+    // withdraw eth
+
     return await this._account.sendTransaction(withdrawTx)
   }
 
@@ -670,6 +667,8 @@ export default class AaveProtocolEvm extends LendingProtocol {
     if (this._account instanceof WalletAccountEvmErc4337) {
       return await this._account.sendTransaction(borrowTx, config)
     }
+
+    // todo: borrow eth
 
     return await this._account.sendTransaction(borrowTx)
   }
@@ -741,6 +740,8 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const { fee: approveFee } = await this._account.sendTransaction(approveTx)
     const { hash, fee } = await this._account.sendTransaction(repayTx)
 
+    // todo: repay eth
+
     return {
       hash,
       fee: approveFee + fee
@@ -769,7 +770,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     const addressMap = await this._getAddressMap()
 
-    const approveTx = await this._getApproveTransaction(options.token, addressMap.pool, options.amount)
+    const approveTx = await this._getApproveTransaction(options.token, addressMap.pool, options.amount === Infinity ? MaxInt256 : options.amount)
     const repayTx = await this._getRepayTransaction(options)
 
     if (this._account instanceof WalletAccountEvmErc4337) {

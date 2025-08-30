@@ -138,5 +138,6 @@ export const AAVE_V3_ERROR = {
   REQUIRE_ACCOUNT_WITH_SIGNER: 'This method requires a non read-only account',
   INVALID_ADDRESS: 'Invalid EVM address',
   INVALID_AMOUNT: 'Amount must be greater than 0',
-  CHAIN_NOT_SUPPORTED: 'This chain is not supported'
+  CHAIN_NOT_SUPPORTED: 'This chain is not supported',
+  CANNOT_FIND_PROVIDER: 'Cannot find wallet provider'
 }
