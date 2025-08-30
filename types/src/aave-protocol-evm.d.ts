@@ -1,4 +1,4 @@
-export const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT: 1000000000000000000;
+export const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT: bigint;
 export default class AaveProtocolEvm extends LendingProtocol {
     /**
      * Creates a read-only handler for Aave Protocol on any EVM chain.
@@ -72,7 +72,6 @@ export default class AaveProtocolEvm extends LendingProtocol {
      * @returns {Promise<void>}
      */
     private _validateBorrow;
-    _getUserDebtByToken(tokenReserve: any, address: any): Promise<bigint>;
     /**
      *
      * @private
@@ -82,7 +81,6 @@ export default class AaveProtocolEvm extends LendingProtocol {
     private _validateRepay;
     /**
      *
-     * @TOKEN_CANNOT_BE_COLLATERAL
      * @param {string} token
      * @param {boolean} useAsCollateral
      * @returns {Promise<void>}

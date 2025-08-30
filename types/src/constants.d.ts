@@ -97,18 +97,15 @@ export namespace AAVE_V3_ERROR {
     let RESERVE_PAUSED: string;
     let RESERVE_FROZEN: string;
     let RESERVE_INACTIVE: string;
-    let SUPPLY_CAP_EXCEEDED: string;
-    let INSUFFICIENT_BALANCE_TO_WITHDRAW: string;
     let HEALTH_FACTOR_TOO_LOW: string;
     let INVALID_LTV: string;
     let INSUFFICIENT_COLLATERAL: string;
     let BORROW_DISABLED: string;
-    let BORROW_CAP_EXCEEDED: string;
-    let DEBT_NOT_FOUND: string;
     let TOKEN_CANNOT_BE_COLLATERAL: string;
     let INVALID_CATEGORY_ID: string;
     let REQUIRE_ACCOUNT_WITH_SIGNER: string;
     let INVALID_ADDRESS: string;
     let INVALID_AMOUNT: string;
     let CHAIN_NOT_SUPPORTED: string;
+    let CANNOT_FIND_PROVIDER: string;
 }
