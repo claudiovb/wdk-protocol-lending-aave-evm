@@ -18,13 +18,11 @@ import { LendingProtocol } from '@wdk/wallet/protocols'
 import { WalletAccountEvm, WalletAccountReadOnlyEvm } from '@wdk/wdk-wallet-evm'
 import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337'
 
-import { IAaveOracle_ABI, IAToken_ABI, IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
+import { IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 import { Contract, isAddress, MaxInt256, ZeroAddress } from 'ethers'
 import { AAVE_V3_ADDRESS_MAP, AAVE_V3_ERROR } from './constants.js'
 
 import UiPoolDataProviderAbi from './UiPoolDataProvider.abi.json' with { type: 'json' }
-import { rayMul } from './math-utils/ray-math.js'
-import { percentDiv } from './math-utils/percentage-math.js'
 
 /** @typedef {import('@wdk/wallet/protocols').BorrowOptions} BorrowOptions */
 /** @typedef {import('@wdk/wallet/protocols').BorrowResult} BorrowResult */
@@ -171,7 +169,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const tokenContract = new Contract(token, IERC20_ABI, await this._getAccountProvider())
 
     return {
-      data: tokenContract.interface.encodeFunctionData('approve', [spender, BigInt(amount)]),
+      data: tokenContract.interface.encodeFunctionData('approve', [spender, amount]),
       to: token,
       value: 0
     }
@@ -218,17 +216,6 @@ export default class AaveProtocolEvm extends LendingProtocol {
     if (!tokenReserve.isActive) {
       throw new Error(AAVE_V3_ERROR.RESERVE_INACTIVE)
     }
-
-    const aTokenContract = new Contract(tokenReserve.aTokenAddress, IAToken_ABI, await this._getAccountProvider())
-    const aTokenScaledSupply = await aTokenContract.scaledTotalSupply()
-
-    // todo
-    const totalSupplyAfterDeposit = rayMul(aTokenScaledSupply + tokenReserve.accruedToTreasury, tokenReserve.liquidityIndex + BigInt(options.amount))
-    const supplyCapInBaseUnit = tokenReserve.supplyCap * (10n ** tokenReserve.decimals)
-
-    if (totalSupplyAfterDeposit > supplyCapInBaseUnit) {
-      throw new Error(AAVE_V3_ERROR.SUPPLY_CAP_EXCEEDED)
-    }
   }
 
   /**
@@ -237,7 +224,6 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * @returns {Promise<void>}
    */
   async _validateWithdraw(options) {
-    const address = await this._account.getAddress()
     const tokenReserve = await this._getTokenReserveData(options.token)
 
     if (tokenReserve.isPaused) {
@@ -251,15 +237,6 @@ export default class AaveProtocolEvm extends LendingProtocol {
     if (!tokenReserve.isActive) {
       throw new Error(AAVE_V3_ERROR.RESERVE_INACTIVE)
     }
-
-    const aTokenContract = new Contract(tokenReserve.aTokenAddress, IAToken_ABI, await this._getAccountProvider())
-    const userScaledBalance = await aTokenContract.scaledBalanceOf(address)
-    const userBalance = rayMul(userScaledBalance, tokenReserve.liquidityIndex)
-
-    // todo
-    if (BigInt(options.amount) > userBalance) {
-      throw new Error(AAVE_V3_ERROR.INSUFFICIENT_BALANCE_TO_WITHDRAW)
-    }
   }
 
   /**
@@ -271,15 +248,15 @@ export default class AaveProtocolEvm extends LendingProtocol {
   async _validateBorrow(options) {
     const { ltv, healthFactor, totalCollateralBase } = await this.getAccountData(options.onBehalfOf)
 
-    if (BigInt(ltv) === 0n) {
+    if (ltv === 0) {
       throw new Error(AAVE_V3_ERROR.INVALID_LTV)
     }
 
-    if (BigInt(totalCollateralBase) === 0n) {
+    if (totalCollateralBase === 0) {
       throw new Error(AAVE_V3_ERROR.INSUFFICIENT_COLLATERAL)
     }
 
-    if (BigInt(healthFactor) < HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT) {
+    if (healthFactor < HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT) {
       throw new Error(AAVE_V3_ERROR.HEALTH_FACTOR_TOO_LOW)
     }
 
@@ -300,33 +277,6 @@ export default class AaveProtocolEvm extends LendingProtocol {
     if (!tokenReserve.borrowingEnabled) {
       throw new Error(AAVE_V3_ERROR.BORROW_DISABLED)
     }
-
-    // todo
-    const borrowCapInBaseUnit = tokenReserve.borrowCap * (10n ** tokenReserve.decimals)
-    const totalSupplyVariableDebt = rayMul(tokenReserve.totalScaledVariableDebt, tokenReserve.variableBorrowIndex)
-    const totalDebtWithAmount = totalSupplyVariableDebt + BigInt(options.amount)
-
-    if (totalDebtWithAmount > borrowCapInBaseUnit) {
-      throw new Error(AAVE_V3_ERROR.BORROW_CAP_EXCEEDED)
-    }
-
-    const priceOracleContract = new Contract(addressMap.priceOracle, IAaveOracle_ABI, await this._getAccountProvider())
-    const tokenPrice = await priceOracleContract.getAssetPrice(options.token)
-
-    const amountInBaseCurrency = BigInt(options.amount) * tokenPrice / (10n ** tokenReserve.decimals) // divide by decimals first might lead to zero
-    const collateralNeededInBaseCurrency = percentDiv(BigInt(totalDebtBase) + amountInBaseCurrency, BigInt(ltv))
-
-    if (collateralNeededInBaseCurrency > totalCollateralBase) {
-      throw new Error(AAVE_V3_ERROR.INSUFFICIENT_COLLATERAL)
-    }
-  }
-
-  async _getUserDebtByToken(tokenReserve, address) {
-    // VariableDebtToken contract inherits the same class as AToken, we only need a few overlapping methods
-    const variableDebtTokenContract = new Contract(tokenReserve.variableDebtTokenAddress, IAToken_ABI, await this._getAccountProvider())
-    const userScaledBalance = await variableDebtTokenContract.scaledBalanceOf(address)
-
-    return rayMul(userScaledBalance, tokenReserve.variableBorrowIndex)
   }
 
   /**
@@ -344,13 +294,6 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     if (!tokenReserve.isActive) {
       throw new Error(AAVE_V3_ERROR.RESERVE_INACTIVE)
-    }
-
-    const address = await this._account.getAddress()
-    const userDebt = await this._getUserDebtByToken(tokenReserve, options.onBehalfOf || address)
-
-    if (userDebt === 0n) {
-      throw new Error(AAVE_V3_ERROR.DEBT_NOT_FOUND)
     }
   }
 
@@ -457,17 +400,12 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const address = await this._account.getAddress()
     const poolContract = await this._getPoolContract()
 
-    let amount = BigInt(options.amount)
+    let amount 
 
     if (options.amount === Infinity) {
-      if (options.onBehalfOf) {
-        const tokenReserve = await this._getTokenReserveData(options.token)
-        const userDebt = await this._getUserDebtByToken(tokenReserve, options.onBehalfOf)
-
-        amount = userDebt + 100n // set amount slightly above user debt so the protocol understands it's a full repay
-      } else {
-        amount = MaxInt256
-      }
+      amount = MaxInt256
+    } else {
+      amount = BigInt(options.amount)
     }
 
     const repayData = poolContract.interface.encodeFunctionData('repay', [
