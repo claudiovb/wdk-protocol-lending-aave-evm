@@ -16,6 +16,7 @@
     "@wdk/wdk-wallet": "https://github.com/tetherto/wdk-wallet#develop",
     "@wdk/wdk-wallet-evm": "https://github.com/tetherto/wdk-wallet-evm#develop",
     "@wdk/wdk-wallet-evm-erc-4337": "https://github.com/tetherto/wdk-wallet-evm-erc-4337#develop",
+    "bare-wdk-runtime": "2.0.0",
     "ethers": "6.14.3",
     "@bgd-labs/aave-address-book": "4.25.3"
   },
@@ -25,5 +26,15 @@
     "rimraf": "6.0.1",
     "standard": "17.1.2",
     "typescript": "^5.8.3"
+  },
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "bare": "./bare.js",
+      "default": "./index.js"
+    },
+    "./package": {
+      "default": "./package.json"
+    }
   }
 }
