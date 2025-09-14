@@ -14,16 +14,10 @@
 
 'use strict'
 
-import {
-  AaveV3Arbitrum,
-  AaveV3Avalanche,
-  AaveV3Base, AaveV3BNB, AaveV3Celo,
-  AaveV3Ethereum, AaveV3Gnosis, AaveV3Linea, AaveV3Metis,
-  AaveV3Optimism,
-  AaveV3Polygon, AaveV3Scroll, AaveV3Soneium, AaveV3Sonic, AaveV3ZkSync
-} from '@bgd-labs/aave-address-book'
+import { AaveV3Arbitrum, AaveV3Avalanche, AaveV3Base, AaveV3BNB, AaveV3Celo, AaveV3Ethereum, AaveV3Gnosis, AaveV3Linea, AaveV3Metis, AaveV3Optimism, AaveV3Polygon, AaveV3Scroll, AaveV3Soneium, AaveV3Sonic, AaveV3ZkSync } from '@bgd-labs/aave-address-book'
 
-export const AAVE_V3_ADDRESS_MAP = {
+/** @internal */
+export default {
   [AaveV3Ethereum.CHAIN_ID]: {
     pool: AaveV3Ethereum.POOL,
     uiPoolDataProvider: AaveV3Ethereum.UI_POOL_DATA_PROVIDER,
@@ -114,26 +108,4 @@ export const AAVE_V3_ADDRESS_MAP = {
     poolAddressesProvider: AaveV3Metis.POOL_ADDRESSES_PROVIDER,
     priceOracle: AaveV3Metis.ORACLE
   }
-}
-
-/**
- * @enum {string}
- */
-export const AAVE_V3_ERROR = {
-  INSUFFICIENT_FUND: 'Insufficient fund to supply',
-  CANNOT_FIND_TOKEN_RESERVE: 'Cannot find token reserve',
-  RESERVE_PAUSED: 'The reserve is paused',
-  RESERVE_FROZEN: 'The reserve is frozen',
-  RESERVE_INACTIVE: 'The reserve is inactive',
-  HEALTH_FACTOR_TOO_LOW: 'Health factor is lower than the liquidation threshold',
-  INVALID_LTV: 'Invalid LTV',
-  INSUFFICIENT_COLLATERAL: 'Insufficient collateral to borrow',
-  BORROW_DISABLED: 'Borrowing is not enabled for this token',
-  TOKEN_CANNOT_BE_COLLATERAL: 'This token cannot be used as collateral',
-  INVALID_CATEGORY_ID: 'Invalid category ID',
-  REQUIRE_ACCOUNT_WITH_SIGNER: 'This method requires a non read-only account',
-  INVALID_ADDRESS: 'Invalid EVM address',
-  INVALID_AMOUNT: 'Amount must be greater than 0',
-  CHAIN_NOT_SUPPORTED: 'This chain is not supported',
-  CANNOT_FIND_PROVIDER: 'Cannot find wallet provider'
 }

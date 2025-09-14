@@ -15,411 +15,90 @@
 'use strict'
 
 import { LendingProtocol } from '@wdk/wallet/protocols'
-import { WalletAccountEvm, WalletAccountReadOnlyEvm } from '@wdk/wdk-wallet-evm'
+import { WalletAccountEvm } from '@wdk/wdk-wallet-evm'
 import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337'
 
+// eslint-disable-next-line camelcase
 import { IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
-import { Contract, isAddress, MaxInt256, ZeroAddress } from 'ethers'
-import { AAVE_V3_ADDRESS_MAP, AAVE_V3_ERROR } from './constants.js'
+import { BrowserProvider, Contract, isAddress, JsonRpcProvider, ZeroAddress } from 'ethers'
+import AAVE_V3_ADDRESS_MAP from './address-map.js'
 
-import UiPoolDataProviderAbi from './UiPoolDataProvider.abi.json' with { type: 'json' }
+import UiPoolDataProviderAbi from './ui-pool-data-provider.js'
+
+/** @typedef {import('@wdk/wallet').TransactionResult} TransactionResult */
 
 /** @typedef {import('@wdk/wallet/protocols').BorrowOptions} BorrowOptions */
 /** @typedef {import('@wdk/wallet/protocols').BorrowResult} BorrowResult */
 /** @typedef {import('@wdk/wallet/protocols').SupplyOptions} SupplyOptions */
-/** @typedef {import('@wdk/wallet/protocols').SupplyResult} SupplyResult */
 /** @typedef {import('@wdk/wallet/protocols').WithdrawOptions} WithdrawOptions */
 /** @typedef {import('@wdk/wallet/protocols').WithdrawResult} WithdrawResult */
 /** @typedef {import('@wdk/wallet/protocols').RepayOptions} RepayOptions */
-/** @typedef {import('@wdk/wallet/protocols').RepayResult} RepayResult */
-/** @typedef {import('@wdk/wdk-wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
-/** @typedef {import('@wdk/wdk-wallet-evm').WalletAccountEvm} WalletAccountEvm */
-/** @typedef {import('@wdk/wdk-wallet-evm').EvmTransaction} EvmTransaction */
-/** @typedef {import('@wdk/wdk-wallet-evm-erc-4337').WalletAccountReadOnlyEvmErc4337} WalletAccountReadOnlyEvmErc4337 */
-/** @typedef {import('@wdk/wdk-wallet-evm-erc-4337').WalletAccountEvmErc4337} WalletAccountEvmErc4337 */
+
+/** @typedef {import('@wdk/wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
+
 /** @typedef {import('@wdk/wdk-wallet-evm-erc-4337').EvmErc4337WalletConfig} EvmErc4337WalletConfig */
 
 /**
+ * @typedef {Object} SupplyResult
+ * @property {string} hash - The hash of the supply operation.
+ * @property {bigint} fee - The gas cost.
+ * @property {string} [approveHash] - If the protocol has been initialized with a standard wallet account, this field will contain the hash
+ *   of the approve call to allow aave to transfer the tokens to their pools. If the protocol has been initialized with an erc-4337 wallet account,
+ *   this field will be undefined (since the approve call will be bundled in the user operation with hash {@link SupplyResult#hash}).
+ */
+
+/**
+ * @typedef {Object} RepayResult
+ * @property {string} hash - The hash of the repay operation.
+ * @property {bigint} fee - The gas cost.
+ * @property {string} [approveHash] - If the protocol has been initialized with a standard wallet account, this field will contain the hash
+ *   of the approve call to allow aave to transfer the tokens to their pools. If the protocol has been initialized with an erc-4337 wallet account,
+ *   this field will be undefined (since the approve call will be bundled in the user operation with hash {@link SupplyResult#hash}).
+ */
+
+/**
  * @typedef {Object} AccountData
- * @property {number} totalCollateralBase - The account’s total collateral base.
- * @property {number} totalDebtBase - The account’s total debt base.
- * @property {number} availableBorrowsBase - The account’s available borrows base.
- * @property {number} currentLiquidationThreshold - The account’s current liquidation threshold.
- * @property {number} ltv - The account’s loan-to-value.
- * @property {number} healthFactor - The account’s health factor.
+ * @property {bigint} totalCollateralBase - The account's total collateral base.
+ * @property {bigint} totalDebtBase - The account's total debt base.
+ * @property {bigint} availableBorrowsBase - The account's available borrowing base.
+ * @property {bigint} currentLiquidationThreshold - The account's current liquidation threshold.
+ * @property {bigint} ltv - The account's loan-to-value.
+ * @property {bigint} healthFactor - The account's health factor.
  */
-
-/**
- * @typedef SetUseReserveAsCollateralResult
- * @property {number} fee
- * @property {string} hash
- */
-
-/**
- * @typedef SetUserEModeResult
- * @property {number} fee
- * @property {string} hash
- */
-
-const DEFAULT_GAS_LIMIT = 300_000
-export const HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT = 10n ** 18n
-
-function isBigIntInfinity(value) {
-  return value === MaxInt256
-}
 
 export default class AaveProtocolEvm extends LendingProtocol {
   /**
-   * Creates a read-only handler for Aave Protocol on any EVM chain.
+   * Creates a new read-only interface to the aave protocol for evm blockchains.
    *
    * @overload
-   * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337} account - The EVM wallet that interacts with Aave Protocol.
+   * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337} account - The wallet account to use to interact with the protocol.
    */
 
   /**
-   * Creates a handler for Aave Protocol on any EVM chain.
+   * Creates a new interface to the aave protocol for evm blockchains.
    *
    * @overload
-   * @param {WalletAccountEvm | WalletAccountEvmErc4337} account - The EVM wallet that interacts with Aave Protocol.
+   * @param {WalletAccountEvm | WalletAccountEvmErc4337} account - The wallet account to use to interact with the protocol.
    */
   constructor (account) {
     super(account)
-  }
 
-  /**
-   * @private
-   */
-  async _getAccountProvider() {
-    if (this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountReadOnlyEvm) {
-      return this._account._account.provider
-    }
+    /** @private */
+    this._addressMap = undefined
 
-    if (this._account instanceof WalletAccountEvmErc4337) {
-      return this._account._ownerAccount._provider
-    }
+    /** @private */
+    this._poolContract = undefined
 
-    if (this._account instanceof WalletAccountReadOnlyEvmErc4337) {
-      const evmReadonlyAccount = await this._account._getEvmReadOnlyAccount()
-      return evmReadonlyAccount._provider
-    }
+    /** @private */
+    this._uiPoolDataProviderContract = undefined
 
-    throw new Error(AAVE_V3_ERROR.CANNOT_FIND_PROVIDER)
-  }
+    if (account._config.provider) {
+      const { provider } = account._config
 
-  /**
-   * The address mapping by chain of Aave Protocol's contracts
-   *
-   * @private
-   * @returns {Promise<Record<string, string>>}
-   */
-  async _getAddressMap() {
-    if (!this._addressMap) {
-      const provider = await this._getAccountProvider()
-      const { chainId } = await provider.getNetwork()
-
-      if (!AAVE_V3_ADDRESS_MAP[chainId]) {
-        throw new Error(AAVE_V3_ERROR.CHAIN_NOT_SUPPORTED)
-      }
-
-      this._addressMap = AAVE_V3_ADDRESS_MAP[chainId]
-    }
-
-    return this._addressMap
-  }
-
-  /** The main contract to interact with Aave Protocol.
-   *
-   * @private
-   * @returns {Promise<Contract>}
-   */
-  async _getPoolContract() {
-    if (!this._poolContract) {
-      const addressMap = await this._getAddressMap()
-      this._poolContract = new Contract(addressMap.pool, IPool_ABI, await this._getAccountProvider())
-    }
-
-    return this._poolContract
-  }
-
-  /**
-   * The contract to query protocol and user's information.
-   *
-   * @private
-   * @returns {Promise<Contract>}
-   */
-  async _getUiPoolDataProviderContract() {
-    if (!this._uiPoolDataProviderContract) {
-      const addressMap = await this._getAddressMap()
-      this._uiPoolDataProviderContract = new Contract(addressMap.uiPoolDataProvider, UiPoolDataProviderAbi, await this._getAccountProvider())
-    }
-
-    return this._uiPoolDataProviderContract
-  }
-
-  /**
-   * Returns a transaction for token spending approval.
-   *
-   * @private
-   * @param {string} token - The token to request spending approval.
-   * @param {string} spender - The address that spends token.
-   * @param {number} amount - Amount of spending to be approved.
-   * @returns {Promise<EvmTransaction>} Returns the EVM transaction.
-   */
-  async _getApproveTransaction(token, spender, amount) {
-    const tokenContract = new Contract(token, IERC20_ABI, await this._getAccountProvider())
-
-    return {
-      data: tokenContract.interface.encodeFunctionData('approve', [spender, amount]),
-      to: token,
-      value: 0
-    }
-  }
-
-  async _getTokenReserveData(token) {
-    const uiPoolDataProviderContract = await this._getUiPoolDataProviderContract()
-    const addressMap = await this._getAddressMap()
-
-    const [reserves] = await uiPoolDataProviderContract.getReservesData(addressMap.poolAddressesProvider)
-
-    const tokenReserve = reserves.find((reserve) => reserve.underlyingAsset.toLowerCase() === token.toLowerCase())
-
-    if (!tokenReserve) {
-      throw new Error(AAVE_V3_ERROR.CANNOT_FIND_TOKEN_RESERVE)
-    }
-
-    return tokenReserve
-  }
-
-  /**
-   *
-   * @private
-   * @param {SupplyOptions} options
-   * @returns {Promise<void>}
-   */
-  async _validateSupply(options) {
-    const tokenBalance = await this._account.getTokenBalance(options.token)
-
-    if (tokenBalance < options.amount) {
-      throw new Error(AAVE_V3_ERROR.INSUFFICIENT_FUND)
-    }
-
-    const tokenReserve = await this._getTokenReserveData(options.token)
-
-    if (tokenReserve.isPaused) {
-      throw new Error(AAVE_V3_ERROR.RESERVE_PAUSED)
-    }
-
-    if (tokenReserve.isFrozen) {
-      throw new Error(AAVE_V3_ERROR.RESERVE_FROZEN)
-    }
-
-    if (!tokenReserve.isActive) {
-      throw new Error(AAVE_V3_ERROR.RESERVE_INACTIVE)
-    }
-  }
-
-  /**
-   * @private
-   * @param {WithdrawOptions} options
-   * @returns {Promise<void>}
-   */
-  async _validateWithdraw(options) {
-    const tokenReserve = await this._getTokenReserveData(options.token)
-
-    if (tokenReserve.isPaused) {
-      throw new Error(AAVE_V3_ERROR.RESERVE_PAUSED)
-    }
-
-    if (tokenReserve.isFrozen) {
-      throw new Error(AAVE_V3_ERROR.RESERVE_FROZEN)
-    }
-
-    if (!tokenReserve.isActive) {
-      throw new Error(AAVE_V3_ERROR.RESERVE_INACTIVE)
-    }
-  }
-
-  /**
-   *
-   * @private
-   * @param {BorrowOptions} options
-   * @returns {Promise<void>}
-   */
-  async _validateBorrow(options) {
-    const { ltv, healthFactor, totalCollateralBase } = await this.getAccountData(options.onBehalfOf)
-
-    if (ltv === 0) {
-      throw new Error(AAVE_V3_ERROR.INVALID_LTV)
-    }
-
-    if (totalCollateralBase === 0) {
-      throw new Error(AAVE_V3_ERROR.INSUFFICIENT_COLLATERAL)
-    }
-
-    if (healthFactor < HEALTH_FACTOR_LIQUIDATION_THRESHOLD_IN_BASE_UNIT) {
-      throw new Error(AAVE_V3_ERROR.HEALTH_FACTOR_TOO_LOW)
-    }
-
-    const tokenReserve = await this._getTokenReserveData(options.token)
-
-    if (tokenReserve.isPaused) {
-      throw new Error(AAVE_V3_ERROR.RESERVE_PAUSED)
-    }
-
-    if (tokenReserve.isFrozen) {
-      throw new Error(AAVE_V3_ERROR.RESERVE_FROZEN)
-    }
-
-    if (!tokenReserve.isActive) {
-      throw new Error(AAVE_V3_ERROR.RESERVE_INACTIVE)
-    }
-
-    if (!tokenReserve.borrowingEnabled) {
-      throw new Error(AAVE_V3_ERROR.BORROW_DISABLED)
-    }
-  }
-
-  /**
-   *
-   * @private
-   * @param {RepayOptions} options
-   * @returns {Promise<void>}
-   */
-  async _validateRepay(options) {
-    const tokenReserve = await this._getTokenReserveData(options.token)
-
-    if (tokenReserve.isPaused) {
-      throw new Error(AAVE_V3_ERROR.RESERVE_PAUSED)
-    }
-
-    if (!tokenReserve.isActive) {
-      throw new Error(AAVE_V3_ERROR.RESERVE_INACTIVE)
-    }
-  }
-
-  /**
-   *
-   * @param {string} token
-   * @param {boolean} useAsCollateral
-   * @returns {Promise<void>}
-   */
-  async _validateUseReserveAsCollateral(token, useAsCollateral) {
-    const tokenReserve = await this._getTokenReserveData(token)
-
-    if (useAsCollateral && tokenReserve.baseLTVasCollateral === 0) {
-      throw new Error(AAVE_V3_ERROR.TOKEN_CANNOT_BE_COLLATERAL)
-    }
-  }
-
-  /**
-   * Returns a transaction to supply a specific token amount to the lending pool.
-   *
-   * @private
-   * @param {SupplyOptions} options - The supply's options.
-   * @returns {Promise<EvmTransaction>} Returns the EVM transaction to supply.
-   */
-  async _getSupplyTransaction(options) {
-    const address = await this._account.getAddress()
-    const poolContract = await this._getPoolContract()
-
-    const supplyData = poolContract.interface.encodeFunctionData('supply', [
-      options.token,
-      BigInt(options.amount),
-      options.onBehalfOf || address,
-      0 // Referral code - currently inactive, 0 means no 3rd party referral
-    ])
-
-    return {
-      data: supplyData,
-      to: poolContract.target,
-      value: 0,
-      gasLimit: DEFAULT_GAS_LIMIT
-    }
-  }
-
-  /**
-   * Returns a transaction to withdraw a specific token amount from the pool.
-   *
-   * @private
-   * @param {WithdrawOptions} options - The withdraw's options.
-   * @returns {Promise<EvmTransaction>} Returns the EVM transaction to withdraw.
-   */
-  async _getWithdrawTransaction(options) {
-    const address = await this._account.getAddress()
-    const poolContract = await this._getPoolContract()
-
-    const withdrawData = poolContract.interface.encodeFunctionData('withdraw', [
-      options.token,
-      options.amount === Infinity ? MaxInt256 : BigInt(options.amount),
-      options.to || address
-    ])
-
-    return {
-      data: withdrawData,
-      to: poolContract.target,
-      value: 0,
-      gasLimit: DEFAULT_GAS_LIMIT
-    }
-  }
-
-  /**
-   * Returns a transaction to borrow a specific token amount.
-   *
-   * @private
-   * @param {BorrowOptions} options - The borrow's options.
-   * @returns {Promise<EvmTransaction>} Returns the EVM transaction to borrow.
-   */
-  async _getBorrowTransaction(options) {
-    const address = await this._account.getAddress()
-    const poolContract = await this._getPoolContract()
-
-    const borrowData = poolContract.interface.encodeFunctionData('borrow', [
-      options.token,
-      BigInt(options.amount),
-      2, // interestRateMode - should always be passed a value of 2 (variable rate mode)
-      0, // referralCode - currently inactive, 0 means no 3rd party referral
-      options.onBehalfOf || address
-    ])
-
-    return {
-      data: borrowData,
-      to: poolContract.target,
-      value: 0,
-      gasLimit: DEFAULT_GAS_LIMIT
-    }
-  }
-
-  /**
-   * Returns a transaction to repay a specific token amount.
-   *
-   * @private
-   * @param {RepayOptions} options - The repay's options.
-   * @returns {Promise<EvmTransaction>} Return the EVM transaction to repay.
-   */
-  async _getRepayTransaction(options) {
-    const address = await this._account.getAddress()
-    const poolContract = await this._getPoolContract()
-
-    let amount 
-
-    if (options.amount === Infinity) {
-      amount = MaxInt256
-    } else {
-      amount = BigInt(options.amount)
-    }
-
-    const repayData = poolContract.interface.encodeFunctionData('repay', [
-      options.token,
-      amount,
-      2, // interestRateMode - should always be passed a value of 2 (variable rate mode)
-      options.onBehalfOf || address
-    ])
-
-    return {
-      data: repayData,
-      to: poolContract.target,
-      value: 0,
-      gasLimit: DEFAULT_GAS_LIMIT
+      /** @private */
+      this._provider = typeof provider === 'string'
+        ? new JsonRpcProvider(provider)
+        : new BrowserProvider(provider)
     }
   }
 
@@ -427,328 +106,355 @@ export default class AaveProtocolEvm extends LendingProtocol {
    * Supplies a specific token amount to the lending pool.
    *
    * @param {SupplyOptions} options - The supply's options.
-   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
+   *   overrides the 'paymasterToken' option defined in its configuration.
    * @returns {Promise<SupplyResult>} The supply's result.
    */
-  async supply(options, config) {
+  async supply ({ token, amount, onBehalfOf }, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
+      throw new Error("The 'supply(options)' method requires the protocol to be initialized with a non read-only account.")
     }
 
-    if (!isAddress(options.token)) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (!isAddress(token)) {
+      throw new Error("'token' must be a valid address.")
     }
 
-    if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (amount <= 0) {
+      throw new Error("'amount' should be greater than zero.")
     }
 
-    if (options.amount <= 0) {
-      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
+    if (onBehalfOf !== undefined && (onBehalfOf === ZeroAddress || !isAddress(onBehalfOf))) {
+      throw new Error("'onBehalfOf' must be a valid address (not zero address).")
     }
 
-    await this._validateSupply(options)
+    await this._assertTokenBalance(token, amount)
 
-    const addressMap = await this._getAddressMap()
+    await this._assertTokenReserveStatus(token, { checkFrozen: true })
 
-    const approveTx = await this._getApproveTransaction(options.token, addressMap.pool, options.amount)
-    const supplyTx = await this._getSupplyTransaction(options)
+    const { pool } = await this._getAddressMap()
+    const approveTx = await this._getApproveTransaction(token, pool, amount)
+    const supplyTx = await this._getSupplyTransaction({ token, amount, onBehalfOf })
 
     if (this._account instanceof WalletAccountEvmErc4337) {
-      return await this._account.sendTransaction([approveTx, supplyTx], config)
+      const transaction = await this._account.sendTransaction([approveTx, supplyTx], config)
+
+      return transaction
     }
 
-    const { fee: approveFee } = await this._account.sendTransaction(approveTx)
-    const { hash, fee } = await this._account.sendTransaction(supplyTx)
+    const { hash: approveHash, fee: approveFee } = await this._account.sendTransaction(approveTx)
+    const { hash, fee: supplyFee } = await this._account.sendTransaction(supplyTx)
+    const fee = approveFee + supplyFee
 
-    // todo: supply ETH
-
-    return {
-      fee: fee + approveFee,
-      hash
-    }
+    return { approveHash, hash, fee }
   }
 
   /**
    * Quotes the costs of a supply operation.
    *
    * @param {SupplyOptions} options - The supply's options.
-   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
-   * @returns {Promise<Omit<SupplyResult, 'hash'>>} The supply's costs.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
+   *   overrides the 'paymasterToken' option defined in its configuration.
+   * @returns {Promise<Omit<SupplyResult, 'hash' | 'approveHash'>>} The supply's costs.
    */
-  async quoteSupply(options, config) {
-    if (!isAddress(options.token)) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+  async quoteSupply ({ token, amount, onBehalfOf }, config) {
+    if (!isAddress(token)) {
+      throw new Error("'token' must be a valid address.")
     }
 
-    if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (amount <= 0) {
+      throw new Error("'amount' should be greater than zero.")
     }
 
-    if (options.amount <= 0) {
-      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
+    if (onBehalfOf !== undefined && (onBehalfOf === ZeroAddress || !isAddress(onBehalfOf))) {
+      throw new Error("'onBehalfOf' must be a valid address (not zero address).")
     }
 
-    const addressMap = await this._getAddressMap()
+    const { pool } = await this._getAddressMap()
+    const approveTx = await this._getApproveTransaction(token, pool, amount)
+    const supplyTx = await this._getSupplyTransaction({ token, amount, onBehalfOf })
 
-    const approveTx = await this._getApproveTransaction(options.token, addressMap.pool, options.amount)
-    const supplyTx = await this._getSupplyTransaction(options)
+    if (this._account instanceof WalletAccountReadOnlyEvmErc4337) {
+      const transaction = await this._account.quoteSendTransaction([approveTx, supplyTx], config)
 
-    if (this._account instanceof WalletAccountEvmErc4337) {
-      return this._account.quoteSendTransaction([approveTx, supplyTx], config)
+      return transaction
     }
 
-    const [approveQuote, supplyQuote] = await Promise.all([
-      this._account.quoteSendTransaction(approveTx),
-      this._account.quoteSendTransaction(supplyTx)
-    ])
+    const { fee: approveFee } = await this._account.quoteSendTransaction(approveTx)
+    const { fee: supplyFee } = await this._account.quoteSendTransaction(supplyTx)
+    const fee = approveFee + supplyFee
+
+    return { fee }
+  }
+
+  /** @private */
+  async _getSupplyTransaction ({ token, amount, onBehalfOf }) {
+    const address = await this._account.getAddress()
+
+    const poolContract = await this._getPoolContract()
 
     return {
-      fee: approveQuote.fee + supplyQuote.fee
+      to: poolContract.target,
+      value: 0,
+      data: poolContract.interface.encodeFunctionData('supply', [
+        token,
+        amount,
+        onBehalfOf || address,
+        0
+      ])
     }
   }
 
   /**
    * Withdraws a specific token amount from the pool.
    *
-   * @param {WithdrawOptions} options - The withdraw's options. Set Infinity as amount to withdraw the entire balance.
-   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+   * @param {WithdrawOptions} options - The withdraw's options.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
+   *   overrides the 'paymasterToken' option defined in its configuration.
    * @returns {Promise<WithdrawResult>} The withdraw's result.
    */
-  async withdraw(options, config) {
+  async withdraw ({ token, amount, to }, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
+      throw new Error("The 'withdraw(options)' method requires the protocol to be initialized with a non read-only account.")
     }
 
-    if (options.to !== undefined && (options.to === ZeroAddress || !isAddress(options.to))) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (!isAddress(token)) {
+      throw new Error("'token' must be a valid address.")
     }
 
-    if (!isAddress(options.token)) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (amount <= 0) {
+      throw new Error("'amount' should be greater than zero.")
     }
 
-    if (options.amount <= 0) {
-      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
+    if (to !== undefined && (to === ZeroAddress || !isAddress(to))) {
+      throw new Error("'to' must be a valid address (not zero address).")
     }
 
-    await this._validateWithdraw(options)
+    await this._assertTokenReserveStatus(token, { checkFrozen: true })
 
-    const withdrawTx = await this._getWithdrawTransaction(options)
-
-    if (this._account instanceof WalletAccountEvmErc4337) {
-      return await this._account.sendTransaction(withdrawTx, config)
-    }
-
-    // withdraw eth
-
-    return await this._account.sendTransaction(withdrawTx)
+    const withdrawTx = await this._getWithdrawTransaction({ token, amount, to })
+    const transaction = await this._account.sendTransaction(withdrawTx, config)
+    return transaction
   }
 
   /**
    * Quotes the costs of a withdraw operation.
    *
    * @param {WithdrawOptions} options - The withdraw's options.
-   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
+   *   overrides the 'paymasterToken' option defined in its configuration.
    * @returns {Promise<Omit<WithdrawResult, 'hash'>>} The withdraw's result.
    */
-  async quoteWithdraw(options, config) {
-    if (options.to !== undefined && (options.to === ZeroAddress || !isAddress(options.to))) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+  async quoteWithdraw ({ token, amount, to }, config) {
+    if (!isAddress(token)) {
+      throw new Error("'token' must be a valid address.")
     }
 
-    if (!isAddress(options.token)) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (amount <= 0) {
+      throw new Error("'amount' should be greater than zero.")
     }
 
-    if (options.amount <= 0) {
-      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
+    if (to !== undefined && (to === ZeroAddress || !isAddress(to))) {
+      throw new Error("'to' must be a valid address (not zero address).")
     }
 
-    const withdrawTx = await this._getWithdrawTransaction(options)
+    const withdrawTx = await this._getWithdrawTransaction({ token, amount, to })
+    const transaction = await this._account.quoteSendTransaction(withdrawTx, config)
+    return transaction
+  }
 
-    if (this._account instanceof WalletAccountEvmErc4337) {
-      return await this._account.quoteSendTransaction(withdrawTx, config)
+  /** @private */
+  async _getWithdrawTransaction ({ token, amount, to }) {
+    const address = await this._account.getAddress()
+
+    const poolContract = await this._getPoolContract()
+
+    return {
+      to: poolContract.target,
+      value: 0,
+      data: poolContract.interface.encodeFunctionData('withdraw', [
+        token,
+        amount,
+        to || address
+      ])
     }
-
-    return await this._account.quoteSendTransaction(withdrawTx)
   }
 
   /**
    * Borrows a specific token amount.
    *
    * @param {BorrowOptions} options - The borrow's options.
-   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
+   *   overrides the 'paymasterToken' option defined in its configuration.
    * @returns {Promise<BorrowResult>} The borrow's result.
    */
-  async borrow(options, config) {
+  async borrow ({ token, amount, onBehalfOf }, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
+      throw new Error("The 'borrow(options)' method requires the protocol to be initialized with a non read-only account.")
     }
 
-    if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (!isAddress(token)) {
+      throw new Error("'token' must be a valid address.")
     }
 
-    if (!isAddress(options.token)) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (amount <= 0) {
+      throw new Error("'amount' should be greater than zero.")
     }
 
-    if (options.amount <= 0) {
-      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
+    if (onBehalfOf !== undefined && (onBehalfOf === ZeroAddress || !isAddress(onBehalfOf))) {
+      throw new Error("'onBehalfOf' must be a valid address (not zero address).")
     }
 
-    await this._validateBorrow(options)
+    await this._assertTokenReserveStatus(token, { checkFrozen: true, checkBorrowing: true })
 
-    const borrowTx = await this._getBorrowTransaction(options)
-
-    if (this._account instanceof WalletAccountEvmErc4337) {
-      return await this._account.sendTransaction(borrowTx, config)
-    }
-
-    // todo: borrow eth
-
-    return await this._account.sendTransaction(borrowTx)
+    const borrowTx = await this._getBorrowTransaction({ token, amount, onBehalfOf })
+    const transaction = await this._account.sendTransaction(borrowTx, config)
+    return transaction
   }
 
   /**
    * Quotes the costs of a borrow operation.
    *
    * @param {BorrowOptions} options - The borrow's options.
-   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
+   *   overrides the 'paymasterToken' option defined in its configuration.
    * @returns {Promise<Omit<BorrowResult, 'hash'>>} The borrow's result.
    */
-  async quoteBorrow(options, config) {
-    if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+  async quoteBorrow ({ token, amount, onBehalfOf }, config) {
+    if (!isAddress(token)) {
+      throw new Error("'token' must be a valid address.")
     }
 
-    if (!isAddress(options.token)) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (amount <= 0) {
+      throw new Error("'amount' should be greater than zero.")
     }
 
-    if (options.amount <= 0) {
-      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
+    if (onBehalfOf !== undefined && (onBehalfOf === ZeroAddress || !isAddress(onBehalfOf))) {
+      throw new Error("'onBehalfOf' must be a valid address (not zero address).")
     }
 
-    const borrowTx = await this._getBorrowTransaction(options)
+    const borrowTx = await this._getBorrowTransaction({ token, amount, onBehalfOf })
+    const transaction = await this._account.quoteSendTransaction(borrowTx, config)
+    return transaction
+  }
 
-    if (this._account instanceof WalletAccountEvmErc4337) {
-      return await this._account.quoteSendTransaction(borrowTx, config)
+  /** @private */
+  async _getBorrowTransaction ({ token, amount, onBehalfOf }) {
+    const address = await this._account.getAddress()
+
+    const poolContract = await this._getPoolContract()
+
+    return {
+      to: poolContract.target,
+      value: 0,
+      data: poolContract.interface.encodeFunctionData('borrow', [
+        token,
+        amount,
+        2,
+        0,
+        onBehalfOf || address
+      ])
     }
-
-    return await this._account.quoteSendTransaction(borrowTx)
   }
 
   /**
    * Repays a specific token amount.
    *
-   * @param {RepayOptions} options - The borrow's options, set Infinity as amount to repay the whole debt
-   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
+   * @param {RepayOptions} options - The borrow's options,
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
+   *   overrides the 'paymasterToken' option defined in its configuration.
    * @returns {Promise<RepayResult>} The repay's result.
    */
-  async repay(options, config) {
+  async repay ({ token, amount, onBehalfOf }, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
+      throw new Error("The 'repay(options)' method requires the protocol to be initialized with a non read-only account.")
     }
 
-    if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (!isAddress(token)) {
+      throw new Error("'token' must be a valid address.")
     }
 
-    if (options.amount <= 0) {
-      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
+    if (amount <= 0) {
+      throw new Error("'amount' should be greater than zero.")
     }
 
-    if (!isAddress(options.token)) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (onBehalfOf !== undefined && (onBehalfOf === ZeroAddress || !isAddress(onBehalfOf))) {
+      throw new Error("'onBehalfOf' must be a valid address (not zero address).")
     }
 
-    await this._validateRepay(options)
+    await this._assertTokenBalance(token, amount)
 
-    const addressMap = await this._getAddressMap()
+    await this._assertTokenReserveStatus(token)
 
-    const approveTx = await this._getApproveTransaction(options.token, addressMap.pool, options.amount === Infinity ? MaxInt256 : options.amount)
-    const repayTx = await this._getRepayTransaction(options)
+    const { pool } = await this._getAddressMap()
+    const approveTx = await this._getApproveTransaction(token, pool, amount)
+    const repayTx = await this._getRepayTransaction({ token, amount, onBehalfOf })
 
     if (this._account instanceof WalletAccountEvmErc4337) {
-      return this._account.sendTransaction([approveTx, repayTx], config)
+      const transaction = await this._account.sendTransaction([approveTx, repayTx], config)
+
+      return transaction
     }
 
-    const { fee: approveFee } = await this._account.sendTransaction(approveTx)
-    const { hash, fee } = await this._account.sendTransaction(repayTx)
+    const { hash: approveHash, fee: approveFee } = await this._account.sendTransaction(approveTx)
+    const { hash, fee: repayFee } = await this._account.sendTransaction(repayTx)
+    const fee = approveFee + repayFee
 
-    // todo: repay eth
-
-    return {
-      hash,
-      fee: approveFee + fee
-    }
+    return { approveHash, hash, fee }
   }
 
   /**
    * Quotes the costs of a repay operation.
    *
    * @param {RepayOptions} options - The repay's options.
-   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
-   * @returns {Promise<Omit<RepayResult, 'hash'>>} The repay's costs.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
+   *   overrides the 'paymasterToken' option defined in its configuration.
+   * @returns {Promise<Omit<RepayResult, 'hash' | 'approveHash'>>} The repay's costs.
    */
-  async quoteRepay(options, config) {
-    if (options.onBehalfOf !== undefined && (options.onBehalfOf === ZeroAddress || !isAddress(options.onBehalfOf))) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+  async quoteRepay ({ token, amount, onBehalfOf }, config) {
+    if (!isAddress(token)) {
+      throw new Error("'token' must be a valid address.")
     }
 
-    if (options.amount <= 0) {
-      throw new Error(AAVE_V3_ERROR.INVALID_AMOUNT)
+    if (amount <= 0) {
+      throw new Error("'amount' should be greater than zero.")
     }
 
-    if (!isAddress(options.token)) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+    if (onBehalfOf !== undefined && (onBehalfOf === ZeroAddress || !isAddress(onBehalfOf))) {
+      throw new Error("'onBehalfOf' must be a valid address (not zero address).")
     }
 
-    const addressMap = await this._getAddressMap()
+    const { pool } = await this._getAddressMap()
+    const approveTx = await this._getApproveTransaction(token, pool, amount)
+    const repayTx = await this._getRepayTransaction({ token, amount, onBehalfOf })
 
-    const approveTx = await this._getApproveTransaction(options.token, addressMap.pool, options.amount === Infinity ? MaxInt256 : options.amount)
-    const repayTx = await this._getRepayTransaction(options)
+    if (this._account instanceof WalletAccountReadOnlyEvmErc4337) {
+      const transaction = await this._account.quoteSendTransaction([approveTx, repayTx], config)
 
-    if (this._account instanceof WalletAccountEvmErc4337) {
-      return this._account.quoteSendTransaction([approveTx, repayTx], config)
+      return transaction
     }
 
-    const [approveQuote, repayQuote] = await Promise.all([
-      this._account.quoteSendTransaction(approveTx),
-      this._account.quoteSendTransaction(repayTx)
-    ])
+    const { fee: approveFee } = await this._account.quoteSendTransaction(approveTx)
+    const { fee: repayFee } = await this._account.quoteSendTransaction(repayTx)
+    const fee = approveFee + repayFee
 
-    return {
-      fee: approveQuote.fee + repayQuote.fee
-    }
+    return { fee }
   }
 
-  /**
-   * Returns the account’s data.
-   *
-   * @param {string} [address] - The address to query account data
-   * @returns {Promise<AccountData>} Returns the account's data.
-   */
-  async getAccountData(address) {
-    if (address !== undefined && (address === ZeroAddress || !isAddress(address))) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
-    }
+  /** @private */
+  async _getRepayTransaction ({ token, amount, onBehalfOf }) {
+    const address = await this._account.getAddress()
 
-    const userAddress = address ? address : await this._account.getAddress()
     const poolContract = await this._getPoolContract()
-    const userAccountData = await poolContract.getUserAccountData(userAddress)
 
     return {
-      totalCollateralBase: Number(userAccountData[0]),
-      totalDebtBase: Number(userAccountData[1]),
-      availableBorrowsBase: Number(userAccountData[2]),
-      currentLiquidationThreshold: Number(userAccountData[3]),
-      ltv: Number(userAccountData[4]),
-      healthFactor: isBigIntInfinity(userAccountData[5])
-        ? Infinity
-        : Number(userAccountData[5])
+      to: poolContract.target,
+      value: 0,
+      data: poolContract.interface.encodeFunctionData('repay', [
+        token,
+        amount,
+        2,
+        onBehalfOf || address
+      ])
     }
   }
 
@@ -757,68 +463,179 @@ export default class AaveProtocolEvm extends LendingProtocol {
    *
    * @param {string} token - The token's address.
    * @param {boolean} useAsCollateral - True if the token should be a valid collateral.
-   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If set, overrides the 'paymasterToken' option defined in the account configuration (only for evm erc-4337 accounts).
-   * @returns {Promise<SetUseReserveAsCollateralResult>}
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
+   *   overrides the 'paymasterToken' option defined in its configuration.
+   * @returns {Promise<TransactionResult>} The transaction's result.
    */
-  async setUseReserveAsCollateral(token, useAsCollateral, config) {
+  async setUseReserveAsCollateral (token, useAsCollateral, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
+      throw new Error("The 'setUseReserveAsCollateral(token, useAsCollateral)' method requires the protocol to be initialized with a non read-only account.")
     }
 
     if (!isAddress(token)) {
-      throw new Error(AAVE_V3_ERROR.INVALID_ADDRESS)
+      throw new Error("'token' must be a valid address.")
     }
-
-    await this._validateUseReserveAsCollateral(token, useAsCollateral)
 
     const poolContract = await this._getPoolContract()
 
-    const setUseReserveData = poolContract.interface.encodeFunctionData('setUserUseReserveAsCollateral', [
-      token,
-      useAsCollateral
-    ])
-
     const tx = {
-      data: setUseReserveData,
       to: poolContract.target,
-      value: 0
+      value: 0,
+      data: poolContract.interface.encodeFunctionData('setUserUseReserveAsCollateral', [token, useAsCollateral])
     }
 
-    if (this._account instanceof WalletAccountEvmErc4337) {
-      return this._account.sendTransaction(tx, config)
-    }
+    const transaction = await this._account.sendTransaction(tx, config)
 
-    return await this._account.sendTransaction(tx)
+    return transaction
   }
 
   /**
-   * Allows user to use the protocol in efficiency mode
+   * Allows user to use the protocol in efficiency mode.
    *
-   * @param {number} categoryId - The eMode category id (0 - 255) defined by Risk or Pool Admins. categoryId set to 0 is a non eMode category
-   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config]
-   * @returns {Promise<SetUserEModeResult>}
+   * @param {number} categoryId - The eMode category id defined by Risk or Pool Admins (0 - 255). 'categoryId' set to 0 is a non eMode category.
+   * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
+   *   overrides the 'paymasterToken' option defined in its configuration.
+   * @returns {Promise<TransactionResult>} The transaction's result.
    */
-  async setUserEMode(categoryId, config) {
+  async setUserEMode (categoryId, config) {
     if (!(this._account instanceof WalletAccountEvm || this._account instanceof WalletAccountEvmErc4337)) {
-      throw new Error(AAVE_V3_ERROR.REQUIRE_ACCOUNT_WITH_SIGNER)
+      throw new Error("The 'setUserEMode(categoryId)' method requires the protocol to be initialized with a non read-only account.")
     }
 
     if (categoryId < 0 || categoryId > 255) {
-      throw new Error(AAVE_V3_ERROR.INVALID_CATEGORY_ID)
+      throw new Error("'categoryId' must be a valid category id.")
     }
 
     const poolContract = await this._getPoolContract()
-    const setUserEModeData = poolContract.interface.encodeFunctionData('setUserEMode', [categoryId])
+
     const tx = {
-      data: setUserEModeData,
       to: poolContract.target,
-      value: 0
+      value: 0,
+      data: poolContract.interface.encodeFunctionData('setUserEMode', [categoryId])
     }
 
-    if (this._account instanceof WalletAccountEvmErc4337) {
-      return this._account.sendTransaction(tx, config)
+    const transaction = await this._account.sendTransaction(tx, config)
+
+    return transaction
+  }
+
+  /**
+   * Returns this or another account's data.
+   *
+   * @param {string} [account] - If set, returns the account's data for the given address.
+   * @returns {Promise<AccountData>} The account's data.
+   */
+  async getAccountData (account) {
+    if (account !== undefined && (account === ZeroAddress || !isAddress(account))) {
+      throw new Error("'account' must be a valid address (not zero address).")
     }
 
-    return this._account.sendTransaction(tx)
+    const address = account || await this._account.getAddress()
+
+    const poolContract = await this._getPoolContract()
+
+    const accountData = await poolContract.getUserAccountData(address)
+
+    return {
+      totalCollateralBase: accountData[0],
+      totalDebtBase: accountData[1],
+      availableBorrowsBase: accountData[2],
+      currentLiquidationThreshold: accountData[3],
+      ltv: accountData[4],
+      healthFactor: accountData[5]
+    }
+  }
+
+  /** @private */
+  async _getAddressMap () {
+    if (!this._addressMap) {
+      const { chainId } = await this._provider.getNetwork()
+
+      if (!AAVE_V3_ADDRESS_MAP[chainId]) {
+        throw new Error(`The blockchain with id ${chainId} is not supported yet.`)
+      }
+
+      this._addressMap = AAVE_V3_ADDRESS_MAP[chainId]
+    }
+
+    return this._addressMap
+  }
+
+  /** @private */
+  async _getPoolContract () {
+    if (!this._poolContract) {
+      const { pool } = await this._getAddressMap()
+
+      this._poolContract = new Contract(pool, IPool_ABI, this._provider)
+    }
+
+    return this._poolContract
+  }
+
+  /** @private */
+  async _getUiPoolDataProviderContract () {
+    if (!this._uiPoolDataProviderContract) {
+      const { uiPoolDataProvider } = await this._getAddressMap()
+
+      this._uiPoolDataProviderContract = new Contract(uiPoolDataProvider, UiPoolDataProviderAbi, this._provider)
+    }
+
+    return this._uiPoolDataProviderContract
+  }
+
+  /** @private */
+  async _getTokenReserve (token) {
+    const { poolAddressesProvider } = await this._getAddressMap()
+    const uiPoolDataProviderContract = await this._getUiPoolDataProviderContract()
+    const [reserves] = await uiPoolDataProviderContract.getReservesData(poolAddressesProvider)
+
+    const tokenReserve = reserves.find(({ underlyingAsset }) => underlyingAsset.toLowerCase() === token.toLowerCase())
+
+    if (!tokenReserve) {
+      throw new Error(`Token reserve not found for token '${token}'.`)
+    }
+
+    return tokenReserve
+  }
+
+  /** @private */
+  async _getApproveTransaction (token, spender, amount) {
+    const tokenContract = new Contract(token, IERC20_ABI)
+
+    return {
+      to: token,
+      value: 0,
+      data: tokenContract.interface.encodeFunctionData('approve', [spender, amount])
+    }
+  }
+
+  /** @private */
+  async _assertTokenBalance (token, amount) {
+    const tokenBalance = await this._account.getTokenBalance(token)
+
+    if (tokenBalance < amount) {
+      throw new Error('Not enough funds to fullfil the operation.')
+    }
+  }
+
+  /** @private */
+  async _assertTokenReserveStatus (token, { checkFrozen, checkBorrowing }) {
+    const tokenReserve = await this._getTokenReserve(token)
+
+    if (tokenReserve.isPaused) {
+      throw new Error("The token's reserve is currently paused.")
+    }
+
+    if (!tokenReserve.isActive) {
+      throw new Error("The token's reserve is currently not active.")
+    }
+
+    if (checkFrozen && tokenReserve.isFrozen) {
+      throw new Error("The token's reserve is currently frozen.")
+    }
+
+    if (checkBorrowing && !tokenReserve.borrowingEnabled) {
+      throw new Error("The token's reserve doesn't currently allow borrows.")
+    }
   }
 }
