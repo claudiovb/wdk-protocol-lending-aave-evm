@@ -15,13 +15,13 @@
 'use strict'
 
 import { LendingProtocol } from '@wdk/wallet/protocols'
-import { WalletAccountEvm } from '@wdk/wdk-wallet-evm'
-import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337'
+import { WalletAccountEvm } from '@wdk/wallet-evm'
+import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@wdk/wallet-evm-erc-4337'
 
 // eslint-disable-next-line camelcase
 import { IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 import { BrowserProvider, Contract, isAddress, JsonRpcProvider, ZeroAddress } from 'ethers'
-import AAVE_V3_ADDRESS_MAP from './address-map.js'
+import AAVE_V3_ADDRESS_MAP from './aave-v3-address-map.js'
 
 import UiPoolDataProviderAbi from './ui-pool-data-provider.js'
 
@@ -36,7 +36,7 @@ import UiPoolDataProviderAbi from './ui-pool-data-provider.js'
 
 /** @typedef {import('@wdk/wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
 
-/** @typedef {import('@wdk/wdk-wallet-evm-erc-4337').EvmErc4337WalletConfig} EvmErc4337WalletConfig */
+/** @typedef {import('@wdk/wallet-evm-erc-4337').EvmErc4337WalletConfig} EvmErc4337WalletConfig */
 
 /**
  * @typedef {Object} SupplyResult
@@ -232,7 +232,11 @@ export default class AaveProtocolEvm extends LendingProtocol {
     await this._assertTokenReserveStatus(token, { checkFrozen: true })
 
     const withdrawTx = await this._getWithdrawTransaction({ token, amount, to })
-    const transaction = await this._account.sendTransaction(withdrawTx, config)
+
+    const transaction = this._account instanceof WalletAccountEvmErc4337
+      ? await this._account.sendTransaction(withdrawTx, config)
+      : await this._account.sendTransaction(withdrawTx)
+
     return transaction
   }
 
@@ -258,7 +262,11 @@ export default class AaveProtocolEvm extends LendingProtocol {
     }
 
     const withdrawTx = await this._getWithdrawTransaction({ token, amount, to })
-    const transaction = await this._account.quoteSendTransaction(withdrawTx, config)
+
+    const transaction = this._account instanceof WalletAccountReadOnlyEvmErc4337
+      ? await this._account.quoteSendTransaction(withdrawTx, config)
+      : await this._account.quoteSendTransaction(withdrawTx)
+
     return transaction
   }
 
@@ -307,7 +315,11 @@ export default class AaveProtocolEvm extends LendingProtocol {
     await this._assertTokenReserveStatus(token, { checkFrozen: true, checkBorrowing: true })
 
     const borrowTx = await this._getBorrowTransaction({ token, amount, onBehalfOf })
-    const transaction = await this._account.sendTransaction(borrowTx, config)
+
+    const transaction = this._account instanceof WalletAccountEvmErc4337
+      ? await this._account.sendTransaction(borrowTx, config)
+      : await this._account.sendTransaction(borrowTx)
+
     return transaction
   }
 
@@ -333,7 +345,11 @@ export default class AaveProtocolEvm extends LendingProtocol {
     }
 
     const borrowTx = await this._getBorrowTransaction({ token, amount, onBehalfOf })
-    const transaction = await this._account.quoteSendTransaction(borrowTx, config)
+
+    const transaction = this._account instanceof WalletAccountReadOnlyEvmErc4337
+      ? await this._account.quoteSendTransaction(borrowTx, config)
+      : await this._account.quoteSendTransaction(borrowTx)
+
     return transaction
   }
 
@@ -459,7 +475,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
   }
 
   /**
-   * Enables/disables a specific token as a collateral for the account’s borrow operations.
+   * Enables/disables a specific token as a collateral for the account's borrow operations.
    *
    * @param {string} token - The token's address.
    * @param {boolean} useAsCollateral - True if the token should be a valid collateral.
@@ -484,7 +500,9 @@ export default class AaveProtocolEvm extends LendingProtocol {
       data: poolContract.interface.encodeFunctionData('setUserUseReserveAsCollateral', [token, useAsCollateral])
     }
 
-    const transaction = await this._account.sendTransaction(tx, config)
+    const transaction = this._account instanceof WalletAccountEvmErc4337
+      ? await this._account.sendTransaction(tx, config)
+      : await this._account.sendTransaction(tx)
 
     return transaction
   }
@@ -514,7 +532,9 @@ export default class AaveProtocolEvm extends LendingProtocol {
       data: poolContract.interface.encodeFunctionData('setUserEMode', [categoryId])
     }
 
-    const transaction = await this._account.sendTransaction(tx, config)
+    const transaction = this._account instanceof WalletAccountEvmErc4337
+      ? await this._account.sendTransaction(tx, config)
+      : await this._account.sendTransaction(tx)
 
     return transaction
   }
@@ -619,7 +639,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
   }
 
   /** @private */
-  async _assertTokenReserveStatus (token, { checkFrozen, checkBorrowing }) {
+  async _assertTokenReserveStatus (token, { checkFrozen, checkBorrowing } = { }) {
     const tokenReserve = await this._getTokenReserve(token)
 
     if (tokenReserve.isPaused) {

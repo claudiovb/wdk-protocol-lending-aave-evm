@@ -102,7 +102,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
     /** @private */
     private _getRepayTransaction;
     /**
-     * Enables/disables a specific token as a collateral for the account’s borrow operations.
+     * Enables/disables a specific token as a collateral for the account's borrow operations.
      *
      * @param {string} token - The token's address.
      * @param {boolean} useAsCollateral - True if the token should be a valid collateral.
@@ -150,7 +150,7 @@ export type WithdrawOptions = import("@wdk/wallet/protocols").WithdrawOptions;
 export type WithdrawResult = import("@wdk/wallet/protocols").WithdrawResult;
 export type RepayOptions = import("@wdk/wallet/protocols").RepayOptions;
 export type WalletAccountReadOnlyEvm = import("@wdk/wallet-evm").WalletAccountReadOnlyEvm;
-export type EvmErc4337WalletConfig = import("@wdk/wdk-wallet-evm-erc-4337").EvmErc4337WalletConfig;
+export type EvmErc4337WalletConfig = import("@wdk/wallet-evm-erc-4337").EvmErc4337WalletConfig;
 export type SupplyResult = {
     /**
      * - The hash of the supply operation.
@@ -210,6 +210,6 @@ export type AccountData = {
     healthFactor: bigint;
 };
 import { LendingProtocol } from '@wdk/wallet/protocols';
-import { WalletAccountReadOnlyEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337';
-import { WalletAccountEvm } from '@wdk/wdk-wallet-evm';
-import { WalletAccountEvmErc4337 } from '@wdk/wdk-wallet-evm-erc-4337';
+import { WalletAccountReadOnlyEvmErc4337 } from '@wdk/wallet-evm-erc-4337';
+import { WalletAccountEvm } from '@wdk/wallet-evm';
+import { WalletAccountEvmErc4337 } from '@wdk/wallet-evm-erc-4337';
