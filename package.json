@@ -1,7 +1,7 @@
 {
   "name": "@wdk/protocol-lending-aave-evm",
   "version": "1.0.0-beta.1",
-  "description": "A simple package that lets @wdk/wallet-evm and wallet-evm-erc-4337 wallet accounts interact with the aave protocol.",
+  "description": "A simple package that lets @wdk/wallet-evm and @wdk/wallet-evm-erc-4337 wallet accounts interact with the aave protocol.",
   "keywords": ["wdk", "protocol", "lending", "aave", "ethereum", "erc-4337"],
   "author": "Tether",
   "license": "Apache-2.0",
@@ -21,9 +21,9 @@
   },
   "dependencies": {
     "@bgd-labs/aave-address-book": "4.29.3",
-    "@wdk/wdk-wallet": "https://github.com/davi0kprogramsthings/wdk-wallet#develop",
-    "@wdk/wdk-wallet-evm": "https://github.com/davi0kprogramsthings/wdk-wallet-evm#develop",
-    "@wdk/wdk-wallet-evm-erc-4337": "https://github.com/davi0kprogramsthings/wdk-wallet-evm-erc-4337#develop",
+    "@wdk/wallet": "https://github.com/davi0kprogramsthings/wdk-wallet#develop",
+    "@wdk/wallet-evm": "https://github.com/davi0kprogramsthings/wdk-wallet-evm#develop",
+    "@wdk/wallet-evm-erc-4337": "https://github.com/davi0kprogramsthings/wdk-wallet-evm-erc-4337#develop",
     "bare-wdk-runtime": "2.0.0",
     "ethers": "6.14.3"
   },
@@ -31,7 +31,7 @@
     "cross-env": "7.0.3",
     "jest": "29.7.0",
     "standard": "17.1.2",
-    "typescript": "^5.8.3"
+    "typescript": "5.8.3"
   },
   "exports": {
     ".": {
