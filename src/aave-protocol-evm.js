@@ -313,6 +313,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
     }
 
     await this._assertTokenReserveStatus(token, { checkFrozen: true, checkBorrowing: true })
+    await this._assertUserAccountData(onBehalfOf)
 
     const borrowTx = await this._getBorrowTransaction({ token, amount, onBehalfOf })
 
@@ -351,6 +352,22 @@ export default class AaveProtocolEvm extends LendingProtocol {
       : await this._account.quoteSendTransaction(borrowTx)
 
     return transaction
+  }
+
+  async _assertUserAccountData (onBehalfOf = undefined) {
+    const { ltv, healthFactor, totalCollateralBase } = await this.getAccountData(onBehalfOf)
+
+    if (ltv === 0) {
+      throw new Error('Loan-to-value must be greater than zero.')
+    }
+
+    if (totalCollateralBase === 0) {
+      throw new Error('Collateral must be greater than zero.')
+    }
+
+    if (healthFactor < 10n ** 18n) {
+      throw new Error('Health factor is lower than 1')
+    }
   }
 
   /** @private */
@@ -639,7 +656,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
   }
 
   /** @private */
-  async _assertTokenReserveStatus (token, { checkFrozen, checkBorrowing } = { }) {
+  async _assertTokenReserveStatus (token, { checkFrozen, checkBorrowing } = {}) {
     const tokenReserve = await this._getTokenReserve(token)
 
     if (tokenReserve.isPaused) {
