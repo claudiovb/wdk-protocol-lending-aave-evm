@@ -634,7 +634,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
     const tokenBalance = await this._account.getTokenBalance(token)
 
     if (tokenBalance < amount) {
-      throw new Error('Not enough funds to fullfil the operation.')
+      throw new Error('Not enough funds to fulfill the operation.')
     }
   }
 
