@@ -14,6 +14,8 @@ export default class AaveProtocolEvm extends LendingProtocol {
      */
     constructor(account: WalletAccountEvm | WalletAccountEvmErc4337);
     /** @private */
+    private _chainId;
+    /** @private */
     private _addressMap;
     /** @private */
     private _poolContract;
@@ -38,7 +40,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
      *   overrides the 'paymasterToken' option defined in its configuration.
      * @returns {Promise<Omit<SupplyResult, 'hash' | 'approveHash'>>} The supply's costs.
      */
-    quoteSupply(options: SupplyOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<Omit<SupplyResult, "hash" | "approveHash">>;
+    quoteSupply(options: SupplyOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<Omit<SupplyResult, "hash" | "approveHash" | "resetAllowanceHash">>;
     /** @private */
     private _getSupplyTransaction;
     /**
@@ -98,7 +100,7 @@ export default class AaveProtocolEvm extends LendingProtocol {
      *   overrides the 'paymasterToken' option defined in its configuration.
      * @returns {Promise<Omit<RepayResult, 'hash' | 'approveHash'>>} The repay's costs.
      */
-    quoteRepay(options: RepayOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<Omit<RepayResult, "hash" | "approveHash">>;
+    quoteRepay(options: RepayOptions, config?: Pick<EvmErc4337WalletConfig, "paymasterToken">): Promise<Omit<RepayResult, "hash" | "approveHash" | "resetAllowanceHash">>;
     /** @private */
     private _getRepayTransaction;
     /**
@@ -127,6 +129,8 @@ export default class AaveProtocolEvm extends LendingProtocol {
      * @returns {Promise<AccountData>} The account's data.
      */
     getAccountData(account?: string): Promise<AccountData>;
+    /** @private */
+    private _getChainId;
     /** @private */
     private _getAddressMap;
     /** @private */
@@ -166,6 +170,13 @@ export type SupplyResult = {
      * this field will be undefined (since the approve call will be bundled in the user operation with hash {@link SupplyResult#hash}).
      */
     approveHash?: string;
+    /**
+     * - If the supply operation has been performed on ethereum mainnet by supplying usdt tokens, this field will
+     * contain the hash of the approve call that resets the allowance of the aave protocol to zero (due to the usdt allowance reset requirement).
+     * If the protocol has been initialized with an erc-4337 wallet account, this field will be undefined (since the approve call will be bundled in
+     * the user operation with hash {@link SupplyResult#hash}).
+     */
+    resetAllowanceHash?: string;
 };
 export type RepayResult = {
     /**
@@ -179,9 +190,16 @@ export type RepayResult = {
     /**
      * - If the protocol has been initialized with a standard wallet account, this field will contain the hash
      * of the approve call to allow aave to transfer the tokens to their pools. If the protocol has been initialized with an erc-4337 wallet account,
-     * this field will be undefined (since the approve call will be bundled in the user operation with hash {@link SupplyResult#hash}).
+     * this field will be undefined (since the approve call will be bundled in the user operation with hash {@link RepayResult#hash}).
      */
     approveHash?: string;
+    /**
+     * - If the repay operation has been performed on ethereum mainnet by repaying usdt tokens, this field will
+     * contain the hash of the approve call that resets the allowance of the aave protocol to zero (due to the usdt allowance reset requirement).
+     * If the protocol has been initialized with an erc-4337 wallet account, this field will be undefined (since the approve call will be bundled in
+     * the user operation with hash {@link RepayResult#hash}).
+     */
+    resetAllowanceHash?: string;
 };
 export type AccountData = {
     /**

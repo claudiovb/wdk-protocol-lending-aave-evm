@@ -14,7 +14,9 @@ const { Contract } = ethers
 
 const SEED = 'cook voyage document eight skate token alien guide drink uncle term abuse'
 
-const TOKEN = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+const TOKEN = '0x9e6b38E072f624fdC4Fbaf7bB12a7D9e657435ce'
+
+const USDT = '0xdac17f958d2ee523a2206206994597c13d831ec7'
 
 const tokenContract = new Contract(TOKEN, IERC20_ABI),
       poolContract = new Contract(AAVE_V3_ADDRESS_MAP[1].pool, IPool_ABI)
@@ -133,6 +135,117 @@ describe('AaveProtocolEvm', () => {
       })
     })
 
+    test('should successfully perform a supply operation of usdt tokens', async () => {
+      const RESET_ALLOWANCE_TRANSACTION = {
+        to: USDT,
+        value: 0,
+        data: tokenContract.interface.encodeFunctionData('approve', [poolContract.target, 0])
+      }
+
+      const APPROVE_TRANSACTION = {
+        to: USDT,
+        value: 0,
+        data: tokenContract.interface.encodeFunctionData('approve', [poolContract.target, 100_000])
+      }
+
+      const SUPPLY_TRANSACTION = {
+        to: poolContract.target,
+        value: 0,
+        data: poolContract.interface.encodeFunctionData('supply', [USDT, 100_000, ADDRESS, 0])
+      }
+
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: USDT,
+        isPaused: false,
+        isActive: true,
+        isFrozen: false,
+        borrowingEnabled: true
+      }]])
+
+      account.getTokenBalance = jest.fn().mockResolvedValueOnce(100_000n)
+
+      account.sendTransaction = jest.fn()
+        .mockResolvedValueOnce({ hash: 'dummy-reset-allowance-hash', fee: 9_876n })
+        .mockResolvedValueOnce({ hash: 'dummy-approve-hash', fee: 12_345n })
+        .mockResolvedValueOnce({ hash: 'dummy-supply-hash', fee: 67_890n })
+
+      const result = await protocol.supply({ token: USDT, amount: 100_000 })
+
+      expect(account.getTokenBalance).toHaveBeenCalledWith(USDT)
+
+      expect(getReservesDataMock).toHaveBeenCalledWith(AAVE_V3_ADDRESS_MAP[1].poolAddressesProvider)
+
+      expect(account.sendTransaction).toHaveBeenCalledWith(RESET_ALLOWANCE_TRANSACTION)
+
+      expect(account.sendTransaction).toHaveBeenCalledWith(APPROVE_TRANSACTION)
+
+      expect(account.sendTransaction).toHaveBeenCalledWith(SUPPLY_TRANSACTION)
+
+      expect(result).toEqual({
+        resetAllowanceHash: 'dummy-reset-allowance-hash',
+        approveHash: 'dummy-approve-hash',
+        hash: 'dummy-supply-hash',
+        fee: 90_111n
+      })
+    })
+
+    test('should successfully perform a supply operation of usdt tokens (erc-4337)', async () => {
+      const RESET_ALLOWANCE_TRANSACTION = {
+        to: USDT,
+        value: 0,
+        data: tokenContract.interface.encodeFunctionData('approve', [poolContract.target, 0])
+      }
+
+      const APPROVE_TRANSACTION = {
+        to: USDT,
+        value: 0,
+        data: tokenContract.interface.encodeFunctionData('approve', [poolContract.target, 100_000])
+      }
+
+      const SUPPLY_TRANSACTION = {
+        to: poolContract.target,
+        value: 0,
+        data: poolContract.interface.encodeFunctionData('supply', [USDT, 100_000, ADDRESS, 0])
+      }
+
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: USDT,
+        isPaused: false,
+        isActive: true,
+        isFrozen: false,
+        borrowingEnabled: true
+      }]])
+
+      const account = new WalletAccountEvmErc4337(SEED, "0'/0/0", {
+        chainId: 1,
+        provider: 'https://dummy-rpc-url.com'
+      })
+
+      const protocol = new AaveProtocolEvm(account)
+
+      account.getAddress = jest.fn().mockResolvedValue(ADDRESS)
+
+      account.getTokenBalance = jest.fn().mockResolvedValueOnce(100_000n)
+
+      account.sendTransaction = jest.fn()
+        .mockResolvedValueOnce({ hash: 'dummy-user-operation-hash', fee: 90_111n })
+
+      account.getTokenBalance = jest.fn().mockResolvedValueOnce(100_000n)
+
+      const result = await protocol.supply({ token: USDT, amount: 100_000 })
+
+      expect(account.getTokenBalance).toHaveBeenCalledWith(USDT)
+
+      expect(getReservesDataMock).toHaveBeenCalledWith(AAVE_V3_ADDRESS_MAP[1].poolAddressesProvider)
+
+      expect(account.sendTransaction).toHaveBeenCalledWith([ RESET_ALLOWANCE_TRANSACTION, APPROVE_TRANSACTION, SUPPLY_TRANSACTION ], undefined)
+
+      expect(result).toEqual({
+        hash: 'dummy-user-operation-hash',
+        fee: 90_111n
+      })
+    })
+
     test("should throw if 'token' is not a valid address", async () => {
       await expect(protocol.supply({ token: 'invalid-token-address', amount: 100_000 }))
         .rejects.toThrow("'token' must be a valid address.")
@@ -197,6 +310,99 @@ describe('AaveProtocolEvm', () => {
 
       expect(result).toEqual({
         fee: 80_235n
+      })
+    })
+
+    test('should successfully quote a supply operation of usdt tokens', async () => {
+      const RESET_ALLOWANCE_TRANSACTION = {
+        to: USDT,
+        value: 0,
+        data: tokenContract.interface.encodeFunctionData('approve', [poolContract.target, 0])
+      }
+
+      const APPROVE_TRANSACTION = {
+        to: USDT,
+        value: 0,
+        data: tokenContract.interface.encodeFunctionData('approve', [poolContract.target, 100_000])
+      }
+
+      const SUPPLY_TRANSACTION = {
+        to: poolContract.target,
+        value: 0,
+        data: poolContract.interface.encodeFunctionData('supply', [USDT, 100_000, ADDRESS, 0])
+      }
+
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: USDT,
+        isPaused: false,
+        isActive: true,
+        isFrozen: false,
+        borrowingEnabled: true
+      }]])
+
+      account.quoteSendTransaction = jest.fn()
+        .mockResolvedValueOnce({ fee: 9_876n })
+        .mockResolvedValueOnce({ fee: 12_345n })
+        .mockResolvedValueOnce({ fee: 67_890n })
+
+      const result = await protocol.quoteSupply({ token: USDT, amount: 100_000 })
+
+      expect(account.quoteSendTransaction).toHaveBeenCalledWith(RESET_ALLOWANCE_TRANSACTION)
+
+      expect(account.quoteSendTransaction).toHaveBeenCalledWith(APPROVE_TRANSACTION)
+
+      expect(account.quoteSendTransaction).toHaveBeenCalledWith(SUPPLY_TRANSACTION)
+
+      expect(result).toEqual({
+        fee: 90_111n
+      })
+    })
+
+    test('should successfully quote a supply operation of usdt tokens (erc-4337)', async () => {
+      const RESET_ALLOWANCE_TRANSACTION = {
+        to: USDT,
+        value: 0,
+        data: tokenContract.interface.encodeFunctionData('approve', [poolContract.target, 0])
+      }
+
+      const APPROVE_TRANSACTION = {
+        to: USDT,
+        value: 0,
+        data: tokenContract.interface.encodeFunctionData('approve', [poolContract.target, 100_000])
+      }
+
+      const SUPPLY_TRANSACTION = {
+        to: poolContract.target,
+        value: 0,
+        data: poolContract.interface.encodeFunctionData('supply', [USDT, 100_000, ADDRESS, 0])
+      }
+
+      getReservesDataMock.mockResolvedValue([[{
+        underlyingAsset: USDT,
+        isPaused: false,
+        isActive: true,
+        isFrozen: false,
+        borrowingEnabled: true
+      }]])
+
+      const account = new WalletAccountEvmErc4337(SEED, "0'/0/0", {
+        chainId: 1,
+        provider: 'https://dummy-rpc-url.com'
+      })
+
+      const protocol = new AaveProtocolEvm(account)
+
+      account.getAddress = jest.fn().mockResolvedValue(ADDRESS)
+
+      account.quoteSendTransaction = jest.fn()
+        .mockResolvedValueOnce({ fee: 90_111n })
+
+      const result = await protocol.quoteSupply({ token: USDT, amount: 100_000 })
+
+      expect(account.quoteSendTransaction).toHaveBeenCalledWith([ RESET_ALLOWANCE_TRANSACTION, APPROVE_TRANSACTION, SUPPLY_TRANSACTION ], undefined)
+
+      expect(result).toEqual({
+        fee: 90_111n
       })
     })
 
