@@ -444,21 +444,36 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     await this._assertTokenReserveStatus(token)
 
+    const chainId = await this._getChainId()
+
     const { pool } = await this._getAddressMap()
+
+    let resetAllowanceTx
+
+    if (chainId === 1n && token.toLowerCase() === USDT) {
+      resetAllowanceTx = await this._getApproveTransaction(token, pool, 0)
+    }
+
     const approveTx = await this._getApproveTransaction(token, pool, amount)
     const repayTx = await this._getRepayTransaction({ token, amount, onBehalfOf })
 
     if (this._account instanceof WalletAccountEvmErc4337) {
-      const transaction = await this._account.sendTransaction([approveTx, repayTx], config)
+      const transactions = resetAllowanceTx ? [resetAllowanceTx, approveTx, repayTx] : [approveTx, repayTx]
+
+      const transaction = await this._account.sendTransaction(transactions, config)
 
       return transaction
     }
 
+    const { hash: resetAllowanceHash, fee: resetAllowanceFee } = resetAllowanceTx
+      ? await this._account.sendTransaction(resetAllowanceTx)
+      : { hash: undefined, fee: 0n }
+
     const { hash: approveHash, fee: approveFee } = await this._account.sendTransaction(approveTx)
     const { hash, fee: repayFee } = await this._account.sendTransaction(repayTx)
-    const fee = approveFee + repayFee
+    const fee = resetAllowanceFee + approveFee + repayFee
 
-    return { approveHash, hash, fee }
+    return { resetAllowanceHash, approveHash, hash, fee }
   }
 
   /**
@@ -482,19 +497,34 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error("'onBehalfOf' must be a valid address (not zero address).")
     }
 
+    const chainId = await this._getChainId()
+
     const { pool } = await this._getAddressMap()
+
+    let resetAllowanceTx
+
+    if (chainId === 1n && token.toLowerCase() === USDT) {
+      resetAllowanceTx = await this._getApproveTransaction(token, pool, 0)
+    }
+
     const approveTx = await this._getApproveTransaction(token, pool, amount)
     const repayTx = await this._getRepayTransaction({ token, amount, onBehalfOf })
 
     if (this._account instanceof WalletAccountReadOnlyEvmErc4337) {
-      const transaction = await this._account.quoteSendTransaction([approveTx, repayTx], config)
+      const transactions = resetAllowanceTx ? [resetAllowanceTx, approveTx, repayTx] : [approveTx, repayTx]
+
+      const transaction = await this._account.quoteSendTransaction(transactions, config)
 
       return transaction
     }
 
+    const { fee: resetAllowanceFee } = resetAllowanceTx
+      ? await this._account.quoteSendTransaction(resetAllowanceTx)
+      : { hash: undefined, fee: 0n }
+
     const { fee: approveFee } = await this._account.quoteSendTransaction(approveTx)
     const { fee: repayFee } = await this._account.quoteSendTransaction(repayTx)
-    const fee = approveFee + repayFee
+    const fee = resetAllowanceFee + approveFee + repayFee
 
     return { fee }
   }
