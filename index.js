@@ -19,12 +19,12 @@
 /** @typedef {import('@wdk/wallet/protocols').BorrowOptions} BorrowOptions */
 /** @typedef {import('@wdk/wallet/protocols').BorrowResult} BorrowResult */
 /** @typedef {import('@wdk/wallet/protocols').SupplyOptions} SupplyOptions */
+/** @typedef {import('@wdk/wallet/protocols').SupplyResult} SupplyResult */
 /** @typedef {import('@wdk/wallet/protocols').WithdrawOptions} WithdrawOptions */
 /** @typedef {import('@wdk/wallet/protocols').WithdrawResult} WithdrawResult */
 /** @typedef {import('@wdk/wallet/protocols').RepayOptions} RepayOptions */
+/** @typedef {import('@wdk/wallet/protocols').RepayResult} RepayResult */
 
-/** @typedef {import('./src/aave-protocol-evm.js').SupplyResult} SupplyResult */
-/** @typedef {import('./src/aave-protocol-evm.js').RepayResult} RepayResult */
 /** @typedef {import('./src/aave-protocol-evm.js').AccountData} AccountData */
 
 export { default } from './src/aave-protocol-evm.js'

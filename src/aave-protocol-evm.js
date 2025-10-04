@@ -19,7 +19,7 @@ import { WalletAccountEvm } from '@wdk/wallet-evm'
 import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@wdk/wallet-evm-erc-4337'
 
 // eslint-disable-next-line camelcase
-import { IERC20_ABI, IPool_ABI } from '@bgd-labs/aave-address-book/abis'
+import { IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 import { BrowserProvider, Contract, isAddress, JsonRpcProvider, ZeroAddress } from 'ethers'
 import AAVE_V3_ADDRESS_MAP from './aave-v3-address-map.js'
 
@@ -30,39 +30,15 @@ import UiPoolDataProviderAbi from './ui-pool-data-provider.js'
 /** @typedef {import('@wdk/wallet/protocols').BorrowOptions} BorrowOptions */
 /** @typedef {import('@wdk/wallet/protocols').BorrowResult} BorrowResult */
 /** @typedef {import('@wdk/wallet/protocols').SupplyOptions} SupplyOptions */
+/** @typedef {import('@wdk/wallet/protocols').SupplyResult} SupplyResult */
 /** @typedef {import('@wdk/wallet/protocols').WithdrawOptions} WithdrawOptions */
 /** @typedef {import('@wdk/wallet/protocols').WithdrawResult} WithdrawResult */
 /** @typedef {import('@wdk/wallet/protocols').RepayOptions} RepayOptions */
+/** @typedef {import('@wdk/wallet/protocols').RepayResult} RepayResult */
 
 /** @typedef {import('@wdk/wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
 
 /** @typedef {import('@wdk/wallet-evm-erc-4337').EvmErc4337WalletConfig} EvmErc4337WalletConfig */
-
-/**
- * @typedef {Object} SupplyResult
- * @property {string} hash - The hash of the supply operation.
- * @property {bigint} fee - The gas cost.
- * @property {string} [approveHash] - If the protocol has been initialized with a standard wallet account, this field will contain the hash
- *   of the approve call to allow aave to transfer the tokens to their pools. If the protocol has been initialized with an erc-4337 wallet account,
- *   this field will be undefined (since the approve call will be bundled in the user operation with hash {@link SupplyResult#hash}).
- * @property {string} [resetAllowanceHash] - If the supply operation has been performed on ethereum mainnet by supplying usdt tokens, this field will
- *   contain the hash of the approve call that resets the allowance of the aave protocol to zero (due to the usdt allowance reset requirement).
- *   If the protocol has been initialized with an erc-4337 wallet account, this field will be undefined (since the approve call will be bundled in
- *   the user operation with hash {@link SupplyResult#hash}).
- */
-
-/**
- * @typedef {Object} RepayResult
- * @property {string} hash - The hash of the repay operation.
- * @property {bigint} fee - The gas cost.
- * @property {string} [approveHash] - If the protocol has been initialized with a standard wallet account, this field will contain the hash
- *   of the approve call to allow aave to transfer the tokens to their pools. If the protocol has been initialized with an erc-4337 wallet account,
- *   this field will be undefined (since the approve call will be bundled in the user operation with hash {@link RepayResult#hash}).
- * @property {string} [resetAllowanceHash] - If the repay operation has been performed on ethereum mainnet by repaying usdt tokens, this field will
- *   contain the hash of the approve call that resets the allowance of the aave protocol to zero (due to the usdt allowance reset requirement).
- *   If the protocol has been initialized with an erc-4337 wallet account, this field will be undefined (since the approve call will be bundled in
- *   the user operation with hash {@link RepayResult#hash}).
- */
 
 /**
  * @typedef {Object} AccountData
@@ -73,8 +49,6 @@ import UiPoolDataProviderAbi from './ui-pool-data-provider.js'
  * @property {bigint} ltv - The account's loan-to-value.
  * @property {bigint} healthFactor - The account's health factor.
  */
-
-const USDT = '0xdac17f958d2ee523a2206206994597c13d831ec7'
 
 export default class AaveProtocolEvm extends LendingProtocol {
   /**
@@ -118,6 +92,8 @@ export default class AaveProtocolEvm extends LendingProtocol {
   /**
    * Supplies a specific token amount to the lending pool.
    *
+   * Users must first approve the necessary amount of tokens to the aave protocol using the {@link WalletAccountEvm#approve} or the {@link WalletAccountEvmErc4337#approve} method.
+   *
    * @param {SupplyOptions} options - The supply's options.
    * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
    *   overrides the 'paymasterToken' option defined in its configuration.
@@ -144,45 +120,24 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     await this._assertTokenReserveStatus(token, { checkFrozen: true })
 
-    const chainId = await this._getChainId()
-
-    const { pool } = await this._getAddressMap()
-
-    let resetAllowanceTx
-
-    if (chainId === 1n && token.toLowerCase() === USDT) {
-      resetAllowanceTx = await this._getApproveTransaction(token, pool, 0)
-    }
-
-    const approveTx = await this._getApproveTransaction(token, pool, amount)
     const supplyTx = await this._getSupplyTransaction({ token, amount, onBehalfOf })
 
-    if (this._account instanceof WalletAccountEvmErc4337) {
-      const transactions = resetAllowanceTx ? [resetAllowanceTx, approveTx, supplyTx] : [approveTx, supplyTx]
+    const transaction = this._account instanceof WalletAccountEvmErc4337
+      ? await this._account.sendTransaction([supplyTx], config)
+      : await this._account.sendTransaction(supplyTx)
 
-      const transaction = await this._account.sendTransaction(transactions, config)
-
-      return transaction
-    }
-
-    const { hash: resetAllowanceHash, fee: resetAllowanceFee } = resetAllowanceTx
-      ? await this._account.sendTransaction(resetAllowanceTx)
-      : { hash: undefined, fee: 0n }
-
-    const { hash: approveHash, fee: approveFee } = await this._account.sendTransaction(approveTx)
-    const { hash, fee: supplyFee } = await this._account.sendTransaction(supplyTx)
-    const fee = resetAllowanceFee + approveFee + supplyFee
-
-    return { resetAllowanceHash, approveHash, hash, fee }
+    return transaction
   }
 
   /**
    * Quotes the costs of a supply operation.
    *
+   * Users must first approve the necessary amount of tokens to the aave protocol using the {@link WalletAccountEvm#approve} or the {@link WalletAccountEvmErc4337#approve} method.
+   *
    * @param {SupplyOptions} options - The supply's options.
    * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
    *   overrides the 'paymasterToken' option defined in its configuration.
-   * @returns {Promise<Omit<SupplyResult, 'hash' | 'approveHash' | 'resetAllowanceHash'>>} The supply's costs.
+   * @returns {Promise<Omit<SupplyResult, 'hash'>>} The supply's costs.
    */
   async quoteSupply ({ token, amount, onBehalfOf }, config) {
     if (!isAddress(token)) {
@@ -197,34 +152,11 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error("'onBehalfOf' must be a valid address (not zero address).")
     }
 
-    const chainId = await this._getChainId()
-
-    const { pool } = await this._getAddressMap()
-
-    let resetAllowanceTx
-
-    if (chainId === 1n && token.toLowerCase() === USDT) {
-      resetAllowanceTx = await this._getApproveTransaction(token, pool, 0)
-    }
-
-    const approveTx = await this._getApproveTransaction(token, pool, amount)
     const supplyTx = await this._getSupplyTransaction({ token, amount, onBehalfOf })
 
-    if (this._account instanceof WalletAccountReadOnlyEvmErc4337) {
-      const transactions = resetAllowanceTx ? [resetAllowanceTx, approveTx, supplyTx] : [approveTx, supplyTx]
-
-      const transaction = await this._account.quoteSendTransaction(transactions, config)
-
-      return transaction
-    }
-
-    const { fee: resetAllowanceFee } = resetAllowanceTx
-      ? await this._account.quoteSendTransaction(resetAllowanceTx)
-      : { hash: undefined, fee: 0n }
-
-    const { fee: approveFee } = await this._account.quoteSendTransaction(approveTx)
-    const { fee: supplyFee } = await this._account.quoteSendTransaction(supplyTx)
-    const fee = resetAllowanceFee + approveFee + supplyFee
+    const { fee } = this._account instanceof WalletAccountReadOnlyEvmErc4337
+      ? await this._account.quoteSendTransaction([supplyTx], config)
+      : await this._account.quoteSendTransaction(supplyTx)
 
     return { fee }
   }
@@ -418,6 +350,8 @@ export default class AaveProtocolEvm extends LendingProtocol {
   /**
    * Repays a specific token amount.
    *
+   * Users must first approve the necessary amount of tokens to the aave protocol using the {@link WalletAccountEvm#approve} or the {@link WalletAccountEvmErc4337#approve} method.
+   *
    * @param {RepayOptions} options - The borrow's options,
    * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
    *   overrides the 'paymasterToken' option defined in its configuration.
@@ -444,45 +378,24 @@ export default class AaveProtocolEvm extends LendingProtocol {
 
     await this._assertTokenReserveStatus(token)
 
-    const chainId = await this._getChainId()
-
-    const { pool } = await this._getAddressMap()
-
-    let resetAllowanceTx
-
-    if (chainId === 1n && token.toLowerCase() === USDT) {
-      resetAllowanceTx = await this._getApproveTransaction(token, pool, 0)
-    }
-
-    const approveTx = await this._getApproveTransaction(token, pool, amount)
     const repayTx = await this._getRepayTransaction({ token, amount, onBehalfOf })
 
-    if (this._account instanceof WalletAccountEvmErc4337) {
-      const transactions = resetAllowanceTx ? [resetAllowanceTx, approveTx, repayTx] : [approveTx, repayTx]
+    const transaction = this._account instanceof WalletAccountEvmErc4337
+      ? await this._account.sendTransaction([repayTx], config)
+      : await this._account.sendTransaction(repayTx)
 
-      const transaction = await this._account.sendTransaction(transactions, config)
-
-      return transaction
-    }
-
-    const { hash: resetAllowanceHash, fee: resetAllowanceFee } = resetAllowanceTx
-      ? await this._account.sendTransaction(resetAllowanceTx)
-      : { hash: undefined, fee: 0n }
-
-    const { hash: approveHash, fee: approveFee } = await this._account.sendTransaction(approveTx)
-    const { hash, fee: repayFee } = await this._account.sendTransaction(repayTx)
-    const fee = resetAllowanceFee + approveFee + repayFee
-
-    return { resetAllowanceHash, approveHash, hash, fee }
+    return transaction
   }
 
   /**
    * Quotes the costs of a repay operation.
    *
+   * Users must first approve the necessary amount of tokens to the aave protocol using the {@link WalletAccountEvm#approve} or the {@link WalletAccountEvmErc4337#approve} method.
+   *
    * @param {RepayOptions} options - The repay's options.
    * @param {Pick<EvmErc4337WalletConfig, 'paymasterToken'>} [config] - If the protocol has been initialized with an erc-4337 wallet account,
    *   overrides the 'paymasterToken' option defined in its configuration.
-   * @returns {Promise<Omit<RepayResult, 'hash' | 'approveHash' | 'resetAllowanceHash'>>} The repay's costs.
+   * @returns {Promise<Omit<RepayResult, 'hash'>>} The repay's costs.
    */
   async quoteRepay ({ token, amount, onBehalfOf }, config) {
     if (!isAddress(token)) {
@@ -497,34 +410,11 @@ export default class AaveProtocolEvm extends LendingProtocol {
       throw new Error("'onBehalfOf' must be a valid address (not zero address).")
     }
 
-    const chainId = await this._getChainId()
-
-    const { pool } = await this._getAddressMap()
-
-    let resetAllowanceTx
-
-    if (chainId === 1n && token.toLowerCase() === USDT) {
-      resetAllowanceTx = await this._getApproveTransaction(token, pool, 0)
-    }
-
-    const approveTx = await this._getApproveTransaction(token, pool, amount)
     const repayTx = await this._getRepayTransaction({ token, amount, onBehalfOf })
 
-    if (this._account instanceof WalletAccountReadOnlyEvmErc4337) {
-      const transactions = resetAllowanceTx ? [resetAllowanceTx, approveTx, repayTx] : [approveTx, repayTx]
-
-      const transaction = await this._account.quoteSendTransaction(transactions, config)
-
-      return transaction
-    }
-
-    const { fee: resetAllowanceFee } = resetAllowanceTx
-      ? await this._account.quoteSendTransaction(resetAllowanceTx)
-      : { hash: undefined, fee: 0n }
-
-    const { fee: approveFee } = await this._account.quoteSendTransaction(approveTx)
-    const { fee: repayFee } = await this._account.quoteSendTransaction(repayTx)
-    const fee = resetAllowanceFee + approveFee + repayFee
+    const { fee } = this._account instanceof WalletAccountReadOnlyEvmErc4337
+      ? await this._account.quoteSendTransaction([repayTx], config)
+      : await this._account.quoteSendTransaction(repayTx)
 
     return { fee }
   }
@@ -700,17 +590,6 @@ export default class AaveProtocolEvm extends LendingProtocol {
     }
 
     return tokenReserve
-  }
-
-  /** @private */
-  async _getApproveTransaction (token, spender, amount) {
-    const tokenContract = new Contract(token, IERC20_ABI)
-
-    return {
-      to: token,
-      value: 0,
-      data: tokenContract.interface.encodeFunctionData('approve', [spender, amount])
-    }
   }
 
   /** @private */
