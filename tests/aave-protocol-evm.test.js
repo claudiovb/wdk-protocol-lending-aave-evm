@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals'
 
-import { WalletAccountEvm } from '@wdk/wallet-evm'
+import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
 
-import { WalletAccountEvmErc4337 } from '@wdk/wallet-evm-erc-4337'
+import { WalletAccountEvmErc4337 } from '@tetherto/wdk-wallet-evm-erc-4337'
 
 import { IPool_ABI } from '@bgd-labs/aave-address-book/abis'
 
