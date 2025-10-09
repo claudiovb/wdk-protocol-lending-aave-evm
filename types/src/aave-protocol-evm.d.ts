@@ -154,17 +154,17 @@ export default class AaveProtocolEvm extends LendingProtocol {
     /** @private */
     private _assertTokenReserveStatus;
 }
-export type TransactionResult = import("@wdk/wallet").TransactionResult;
-export type BorrowOptions = import("@wdk/wallet/protocols").BorrowOptions;
-export type BorrowResult = import("@wdk/wallet/protocols").BorrowResult;
-export type SupplyOptions = import("@wdk/wallet/protocols").SupplyOptions;
-export type SupplyResult = import("@wdk/wallet/protocols").SupplyResult;
-export type WithdrawOptions = import("@wdk/wallet/protocols").WithdrawOptions;
-export type WithdrawResult = import("@wdk/wallet/protocols").WithdrawResult;
-export type RepayOptions = import("@wdk/wallet/protocols").RepayOptions;
-export type RepayResult = import("@wdk/wallet/protocols").RepayResult;
-export type WalletAccountReadOnlyEvm = import("@wdk/wallet-evm").WalletAccountReadOnlyEvm;
-export type EvmErc4337WalletConfig = import("@wdk/wallet-evm-erc-4337").EvmErc4337WalletConfig;
+export type TransactionResult = import("@tetherto/wdk-wallet").TransactionResult;
+export type BorrowOptions = import("@tetherto/wdk-wallet/protocols").BorrowOptions;
+export type BorrowResult = import("@tetherto/wdk-wallet/protocols").BorrowResult;
+export type SupplyOptions = import("@tetherto/wdk-wallet/protocols").SupplyOptions;
+export type SupplyResult = import("@tetherto/wdk-wallet/protocols").SupplyResult;
+export type WithdrawOptions = import("@tetherto/wdk-wallet/protocols").WithdrawOptions;
+export type WithdrawResult = import("@tetherto/wdk-wallet/protocols").WithdrawResult;
+export type RepayOptions = import("@tetherto/wdk-wallet/protocols").RepayOptions;
+export type RepayResult = import("@tetherto/wdk-wallet/protocols").RepayResult;
+export type WalletAccountReadOnlyEvm = import("@tetherto/wdk-wallet-evm").WalletAccountReadOnlyEvm;
+export type EvmErc4337WalletConfig = import("@tetherto/wdk-wallet-evm-erc-4337").EvmErc4337WalletConfig;
 export type AccountData = {
     /**
      * - The account's total collateral base.
@@ -191,6 +191,6 @@ export type AccountData = {
      */
     healthFactor: bigint;
 };
-import { LendingProtocol } from '@wdk/wallet/protocols';
-import { WalletAccountEvm } from '@wdk/wallet-evm';
-import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@wdk/wallet-evm-erc-4337';
+import { LendingProtocol } from '@tetherto/wdk-wallet/protocols';
+import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm';
+import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@tetherto/wdk-wallet-evm-erc-4337';

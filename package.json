@@ -1,8 +1,15 @@
 {
-  "name": "@wdk/protocol-lending-aave-evm",
+  "name": "@tetherto/wdk-protocol-lending-aave-evm",
   "version": "1.0.0-beta.2",
-  "description": "A simple package that lets @wdk/wallet-evm and @wdk/wallet-evm-erc-4337 wallet accounts interact with the aave protocol.",
-  "keywords": ["wdk", "protocol", "lending", "aave", "ethereum", "erc-4337"],
+  "description": "A simple package that lets @tetherto/wdk-wallet-evm and @tetherto/wdk-wallet-evm-erc-4337 wallet accounts interact with the aave protocol.",
+  "keywords": [
+    "wdk",
+    "protocol",
+    "lending",
+    "aave",
+    "ethereum",
+    "erc-4337"
+  ],
   "author": "Tether",
   "license": "Apache-2.0",
   "repository": {
@@ -21,9 +28,9 @@
   },
   "dependencies": {
     "@bgd-labs/aave-address-book": "4.29.3",
-    "@wdk/wallet": "https://github.com/davi0kprogramsthings/wdk-wallet#develop",
-    "@wdk/wallet-evm": "https://github.com/davi0kprogramsthings/wdk-wallet-evm#develop",
-    "@wdk/wallet-evm-erc-4337": "https://github.com/davi0kprogramsthings/wdk-wallet-evm-erc-4337#develop",
+    "@tetherto/wdk-wallet": "^1.0.0-beta.1",
+    "@tetherto/wdk-wallet-evm": "^1.0.0-beta.2",
+    "@tetherto/wdk-wallet-evm-erc-4337": "^1.0.0-beta.1",
     "bare-wdk-runtime": "2.0.0",
     "ethers": "6.14.3"
   },

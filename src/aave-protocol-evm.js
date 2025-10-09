@@ -14,9 +14,9 @@
 
 'use strict'
 
-import { LendingProtocol } from '@wdk/wallet/protocols'
-import { WalletAccountEvm } from '@wdk/wallet-evm'
-import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@wdk/wallet-evm-erc-4337'
+import { LendingProtocol } from '@tetherto/wdk-wallet/protocols'
+import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
+import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@tetherto/wdk-wallet-evm-erc-4337'
 
 // eslint-disable-next-line camelcase
 import { IPool_ABI } from '@bgd-labs/aave-address-book/abis'
@@ -25,20 +25,20 @@ import AAVE_V3_ADDRESS_MAP from './aave-v3-address-map.js'
 
 import UiPoolDataProviderAbi from './ui-pool-data-provider.js'
 
-/** @typedef {import('@wdk/wallet').TransactionResult} TransactionResult */
+/** @typedef {import('@tetherto/wdk-wallet').TransactionResult} TransactionResult */
 
-/** @typedef {import('@wdk/wallet/protocols').BorrowOptions} BorrowOptions */
-/** @typedef {import('@wdk/wallet/protocols').BorrowResult} BorrowResult */
-/** @typedef {import('@wdk/wallet/protocols').SupplyOptions} SupplyOptions */
-/** @typedef {import('@wdk/wallet/protocols').SupplyResult} SupplyResult */
-/** @typedef {import('@wdk/wallet/protocols').WithdrawOptions} WithdrawOptions */
-/** @typedef {import('@wdk/wallet/protocols').WithdrawResult} WithdrawResult */
-/** @typedef {import('@wdk/wallet/protocols').RepayOptions} RepayOptions */
-/** @typedef {import('@wdk/wallet/protocols').RepayResult} RepayResult */
+/** @typedef {import('@tetherto/wdk-wallet/protocols').BorrowOptions} BorrowOptions */
+/** @typedef {import('@tetherto/wdk-wallet/protocols').BorrowResult} BorrowResult */
+/** @typedef {import('@tetherto/wdk-wallet/protocols').SupplyOptions} SupplyOptions */
+/** @typedef {import('@tetherto/wdk-wallet/protocols').SupplyResult} SupplyResult */
+/** @typedef {import('@tetherto/wdk-wallet/protocols').WithdrawOptions} WithdrawOptions */
+/** @typedef {import('@tetherto/wdk-wallet/protocols').WithdrawResult} WithdrawResult */
+/** @typedef {import('@tetherto/wdk-wallet/protocols').RepayOptions} RepayOptions */
+/** @typedef {import('@tetherto/wdk-wallet/protocols').RepayResult} RepayResult */
 
-/** @typedef {import('@wdk/wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
+/** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
 
-/** @typedef {import('@wdk/wallet-evm-erc-4337').EvmErc4337WalletConfig} EvmErc4337WalletConfig */
+/** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').EvmErc4337WalletConfig} EvmErc4337WalletConfig */
 
 /**
  * @typedef {Object} AccountData
