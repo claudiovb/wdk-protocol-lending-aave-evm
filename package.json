@@ -1,6 +1,6 @@
 {
   "name": "@wdk/protocol-lending-aave-evm",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "A simple package that lets @wdk/wallet-evm and @wdk/wallet-evm-erc-4337 wallet accounts interact with the aave protocol.",
   "keywords": ["wdk", "protocol", "lending", "aave", "ethereum", "erc-4337"],
   "author": "Tether",
@@ -42,6 +42,10 @@
     "./package": {
       "default": "./package.json"
     }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "standard": {
     "ignore": [
